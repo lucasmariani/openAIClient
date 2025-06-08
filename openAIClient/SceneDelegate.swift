@@ -20,20 +20,32 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         guard let windowScene = scene as? UIWindowScene else { return }
 
-        let split = UISplitViewController(style: .doubleColumn)
+        let splitViewController = UISplitViewController(style: .doubleColumn)
+
+        splitViewController.preferredDisplayMode = .automatic
+        splitViewController.preferredSplitBehavior = .tile
+        splitViewController.displayModeButtonVisibility = .automatic
+
         let sidebar = OASidebarViewController(coreDataManager: self.coreDataManager)
+        let sidebarNav = UINavigationController(rootViewController: sidebar)
         let chatVC = OAChatViewController(chatDataManager: self.chatDataManager)
         let detailNav = UINavigationController(rootViewController: chatVC)
 
-        split.setViewController(sidebar, for: .primary)
-        split.setViewController(detailNav, for: .secondary)
-        split.preferredDisplayMode = .oneBesideSecondary
+        splitViewController.setViewController(sidebarNav, for: .primary)
+        splitViewController.setViewController(detailNav, for: .secondary)
+
+//        splitViewController.delegate = self
 
         window = UIWindow(windowScene: windowScene)
-        window?.rootViewController = split
+        window?.rootViewController = splitViewController
         window?.makeKeyAndVisible()
-
     }
+
+//    extension SceneDelegate: UISplitViewControllerDelegate {
+//        func splitViewController(_ svc: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column) -> UISplitViewController.Column {
+//            return .primary
+//        }
+//    }
 
     func sceneDidDisconnect(_ scene: UIScene) {
         // Called as the scene is being released by the system.

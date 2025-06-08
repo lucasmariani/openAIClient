@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A044803E2DE8769300DF2194 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = A044803D2DE8769300DF2194 /* OpenAI */; };
-		A068DFC12DEE113F008EAF38 /* Sourceful in Frameworks */ = {isa = PBXBuildFile; productRef = A068DFC02DEE113F008EAF38 /* Sourceful */; };
+		A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = A07A793B2DF5C0C5006540A8 /* Highlightr */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,8 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */,
 				A044803E2DE8769300DF2194 /* OpenAI in Frameworks */,
-				A068DFC12DEE113F008EAF38 /* Sourceful in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -94,7 +94,7 @@
 			name = openAIClient;
 			packageProductDependencies = (
 				A044803D2DE8769300DF2194 /* OpenAI */,
-				A068DFC02DEE113F008EAF38 /* Sourceful */,
+				A07A793B2DF5C0C5006540A8 /* Highlightr */,
 			);
 			productName = openAIClient;
 			productReference = A01FFDCD2DD79870004FD53C /* openAIClient.app */;
@@ -126,7 +126,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A044801B2DE874B100DF2194 /* XCLocalSwiftPackageReference "../responses-fork" */,
-				A068DFBF2DEE113F008EAF38 /* XCRemoteSwiftPackageReference "Sourceful" */,
+				A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A01FFDCE2DD79870004FD53C /* Products */;
@@ -375,12 +375,12 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A068DFBF2DEE113F008EAF38 /* XCRemoteSwiftPackageReference "Sourceful" */ = {
+		A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/twostraws/Sourceful.git";
+			repositoryURL = "https://github.com/raspu/Highlightr.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.4.0;
+				minimumVersion = 2.2.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -391,10 +391,10 @@
 			package = A044801B2DE874B100DF2194 /* XCLocalSwiftPackageReference "../responses-fork" */;
 			productName = OpenAI;
 		};
-		A068DFC02DEE113F008EAF38 /* Sourceful */ = {
+		A07A793B2DF5C0C5006540A8 /* Highlightr */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A068DFBF2DEE113F008EAF38 /* XCRemoteSwiftPackageReference "Sourceful" */;
-			productName = Sourceful;
+			package = A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */;
+			productName = Highlightr;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

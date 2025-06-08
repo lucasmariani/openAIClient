@@ -9,10 +9,26 @@ import UIKit
 import Combine
 
 class OASidebarViewController: UIViewController {
-    private let tableView = UITableView(frame: .zero, style: .plain)
-    private var dataSource: UITableViewDiffableDataSource<Int, String>!
+    private var collectionView: UICollectionView!
+    private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private let coreDataManager: OACoreDataManager
     private var cancellables = Set<AnyCancellable>()
+
+    enum Section: Int, CaseIterable {
+        case chats
+
+        var title: String {
+            switch self {
+            case .chats:
+                return "Recent Chats"
+            }
+        }
+    }
+
+    enum Item: Hashable {
+        case chat(String) // Chat ID
+        case newChat
+    }
 
     init(coreDataManager: OACoreDataManager) {
         self.coreDataManager = coreDataManager
@@ -24,50 +40,109 @@ class OASidebarViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.addSubview(tableView)
-        tableView.frame = view.bounds
-        tableView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
-        tableView.delegate = self
-        tableView.bounces = true
-
+        setupCollectionView()
         setupNavigationBar()
         setupDataSource()
         setupBindings()
+
         Task {
             await loadInitialChats()
-            selectTopMostRowIfAvailable()
         }
     }
 
     private func setupNavigationBar() {
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(addNewChat))
+        // Large title for modern look
+        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationItem.largeTitleDisplayMode = .always
+
+        // Add toolbar items
+        let addButton = UIBarButtonItem(
+            systemItem: .add,
+            primaryAction: UIAction { [weak self] _ in
+                self?.addNewChat()
+            }
+        )
+
+        navigationItem.rightBarButtonItem = addButton
+
+        // Optional: Add search if you want
+        // let searchController = UISearchController(searchResultsController: nil)
+        // navigationItem.searchController = searchController
+    }
+
+    private func setupCollectionView() {
+        var layoutConfig = UICollectionLayoutListConfiguration(appearance: .sidebar)
+        layoutConfig.headerMode = .supplementary
+        layoutConfig.showsSeparators = false
+
+        let layout = UICollectionViewCompositionalLayout.list(using: layoutConfig)
+
+        collectionView = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
+        collectionView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        collectionView.delegate = self
+
+        view.addSubview(collectionView)
     }
 
     private func setupDataSource() {
-        self.dataSource = UITableViewDiffableDataSource<Int, String>(
-            tableView: self.tableView
-        ) { [weak self] table, idxPath, chatID in
-            guard let self = self else { return UITableViewCell() }
-            let cell = table.dequeueReusableCell(withIdentifier: "Cell", for: idxPath)
-            // Access chats directly from dataManager or a local copy updated by Combine
-            if let chat = self.coreDataManager.chats.first(where: { $0.id == chatID }) {
-                let fmt = DateFormatter(); fmt.dateStyle = .short; fmt.timeStyle = .short
-                cell.textLabel?.text = self.formatDateForCellTitle(chat.date)
+        // Register cell types
+        let chatCellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, indexPath, chatID in
+            guard let self = self,
+                  let chat = self.coreDataManager.chats.first(where: { $0.id == chatID }) else { return }
+
+            var content = cell.defaultContentConfiguration()
+            content.text = self.formatDateForCellTitle(chat.date)
+            content.secondaryText = "Tap to open"
+            content.image = UIImage(systemName: "message")
+            content.imageProperties.tintColor = .systemBlue
+
+            cell.contentConfiguration = content
+            cell.accessories = []
+        }
+
+        let newChatCellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Void> { cell, indexPath, _ in
+            var content = cell.defaultContentConfiguration()
+            content.text = "New Chat"
+            content.image = UIImage(systemName: "plus.circle.fill")
+            content.imageProperties.tintColor = .systemGreen
+
+            cell.contentConfiguration = content
+            cell.accessories = []
+        }
+
+        // Header registration
+        let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
+            elementKind: UICollectionView.elementKindSectionHeader
+        ) { supplementaryView, elementKind, indexPath in
+            let section = Section.allCases[indexPath.section]
+            var content = supplementaryView.defaultContentConfiguration()
+            content.text = section.title
+            supplementaryView.contentConfiguration = content
+        }
+
+        dataSource = UICollectionViewDiffableDataSource<Section, Item>(collectionView: collectionView) { collectionView, indexPath, item in
+            switch item {
+            case .chat(let chatID):
+                return collectionView.dequeueConfiguredReusableCell(using: chatCellRegistration, for: indexPath, item: chatID)
+            case .newChat:
+                return collectionView.dequeueConfiguredReusableCell(using: newChatCellRegistration, for: indexPath, item: ())
             }
-            return cell
+        }
+
+        dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
+            return collectionView.dequeueConfiguredReusableSupplementary(using: headerRegistration, for: indexPath)
         }
     }
 
     private func formatDateForCellTitle(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX") // Ensures consistent formatting
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "d MMMM - HH:mm"
         return formatter.string(from: date)
     }
 
     private func setupBindings() {
-        self.coreDataManager.$chats
+        coreDataManager.$chats
             .receive(on: DispatchQueue.main)
             .sink { [weak self] chats in
                 self?.updateSnapshot(with: chats.map { $0.id })
@@ -76,86 +151,88 @@ class OASidebarViewController: UIViewController {
     }
 
     private func updateSnapshot(with chatIDs: [String]) {
-        var snap = NSDiffableDataSourceSnapshot<Int, String>()
-        snap.appendSections([0])
-        snap.appendItems(chatIDs)
-        // Apply snapshot without async/await if dataSource.apply is synchronous
-        // If dataSource.apply is async, ensure it's called correctly.
-        // For UITableViewDiffableDataSource, `apply` can be called synchronously.
-        self.dataSource.apply(snap, animatingDifferences: true)
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
+        snapshot.appendSections([.chats])
+
+        // Add new chat button first
+        snapshot.appendItems([.newChat], toSection: .chats)
+
+        // Add existing chats
+        let chatItems = chatIDs.map { Item.chat($0) }
+        snapshot.appendItems(chatItems, toSection: .chats)
+
+        dataSource.apply(snapshot, animatingDifferences: true)
     }
 
     func loadInitialChats() async {
         do {
-            try await self.coreDataManager.fetchPersistedChats()
-            // The Combine binding will automatically update the snapshot.
-            // So, no need to manually apply snapshot here after fetch.
+            try await coreDataManager.fetchPersistedChats()
         } catch {
-            // TODO: Add alert here.
-            print("Failed to load chats:", error)
+            await MainActor.run {
+                showErrorAlert(message: "Failed to load chats: \(error.localizedDescription)")
+            }
         }
     }
 
-    @objc func addNewChat() {
+    @objc private func addNewChat() {
         Task {
             do {
                 try await coreDataManager.newChat()
             } catch {
-                // TODO: Add alert here.
-                print("Failed to create new chat:", error)
-            }
-        }
-    }
-
-    private func selectTopMostRowIfAvailable() {
-        let chats = self.coreDataManager.chats
-        if !chats.isEmpty,
-           let chat = chats.max(by: { $0.date < $1.date }),
-           let index = chats.firstIndex(of: chat) {
-            let indexPath = IndexPath(row: index, section: 0)
-
-            self.tableView.selectRow(at: indexPath, animated: true, scrollPosition: .top)
-            self.tableView.delegate?.tableView?(tableView, didSelectRowAt: indexPath)
-        }
-    }
-}
-
-extension OASidebarViewController: UITableViewDelegate {
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard let chatID = self.dataSource.itemIdentifier(for: indexPath) else { return }
-        Task {
-            let detailNav = splitViewController?.viewController(for: .secondary) as? UINavigationController
-            let chatVC = detailNav?.topViewController as? OAChatViewController
-            await chatVC?.loadChat(with: chatID)
-
-            if self.splitViewController?.isCollapsed == true {
-                self.splitViewController?.show(.secondary)
-            }
-        }
-    }
-
-    func tableView(_ tableView: UITableView,
-                   trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-        guard let chatID = dataSource.itemIdentifier(for: indexPath) else { return nil }
-
-        let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { [weak self] (_, _, completionHandler) in
-            guard let self else {
-                completionHandler(false)
-                return
-            }
-
-            Task {
-                do {
-                    try await self.coreDataManager.deleteChat(with: chatID)
-                    completionHandler(true)
-                } catch {
-                    print("Failed to delete chat with ID \(chatID): \(error)")
-                    // TODO: Add alert here.
-                    completionHandler(false)
+                await MainActor.run {
+                    showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
                 }
             }
         }
-        
-        return UISwipeActionsConfiguration(actions: [deleteAction])
+    }
+
+    private func showErrorAlert(message: String) {
+        let alert = UIAlertController(title: "Error", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+extension OASidebarViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
+
+        switch item {
+        case .chat(let chatID):
+            Task {
+                let detailNav = splitViewController?.viewController(for: .secondary) as? UINavigationController
+                let chatVC = detailNav?.topViewController as? OAChatViewController
+                await chatVC?.loadChat(with: chatID)
+
+                if splitViewController?.isCollapsed == true {
+                    splitViewController?.show(.secondary)
+                }
+            }
+        case .newChat:
+            addNewChat()
+        }
+
+        collectionView.deselectItem(at: indexPath, animated: true)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let item = dataSource.itemIdentifier(for: indexPath),
+              case .chat(let chatID) = item else { return nil }
+
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
+            let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                Task {
+                    do {
+                        try await self?.coreDataManager.deleteChat(with: chatID)
+                    } catch {
+                        await MainActor.run {
+                            self?.showErrorAlert(message: "Failed to delete chat: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+
+            return UIMenu(title: "", children: [deleteAction])
+        }
     }
 }

@@ -24,8 +24,8 @@ class OAChatViewController: UIViewController {
     init(chatDataManager: OAChatDataManager) {
         self.chatDataManager = chatDataManager
         super.init(nibName: nil, bundle: nil)
-        self.chatDataManager.onMessagesUpdated = { [weak self] reconfigureItemID in
-            self?.updateSnapshot(reconfiguringItemID: reconfigureItemID)
+        self.chatDataManager.onMessagesUpdated = { [weak self] reconfiguringItemID in
+            self?.updateSnapshot(reconfiguringItemID: reconfiguringItemID)
         }
         title = "Chat"
     }
