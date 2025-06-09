@@ -7,6 +7,7 @@
 
 import CoreData
 import Combine
+import OpenAI
 
 final class OACoreDataManager: @unchecked Sendable {
 
@@ -41,7 +42,7 @@ final class OACoreDataManager: @unchecked Sendable {
             // After saving, re-fetch or append to ensure the @Published property is updated
             // For simplicity, re-fetching.
             // Consider more granular updates if performance becomes an issue.
-            let newOAChat = OAChat(chat: chat)! // Assuming OAChat init from Chat is non-failable for new chats
+            guard let newOAChat = OAChat(chat: chat) else { return }
 
             // Prepend the new chat to maintain sort order (newest first)
             // and publish the change.
@@ -133,6 +134,8 @@ final class OACoreDataManager: @unchecked Sendable {
                         let updatedOAChat = OAChat(id: oldOAChat.id,
                                                    date: date, // Use the updated date
                                                    title: oldOAChat.title,
+                                                   provisionaryInputText: oldOAChat.provisionaryInputText,
+                                                   selectedModel: oldOAChat.selectedModel,
                                                    messages: oldOAChat.messages)
                         self.chats[index] = updatedOAChat
                         self.chats.sort(by: { $0.date > $1.date })
@@ -186,6 +189,8 @@ final class OACoreDataManager: @unchecked Sendable {
                 let updatedOAChat = OAChat(id: oldOAChat.id,
                                            date: message.date, // Use the new message's date
                                            title: oldOAChat.title,
+                                           provisionaryInputText: oldOAChat.provisionaryInputText,
+                                           selectedModel: oldOAChat.selectedModel,
                                            messages: oldOAChat.messages) // Keep existing (empty) messages set
 
                 self.chats[index] = updatedOAChat
@@ -193,6 +198,61 @@ final class OACoreDataManager: @unchecked Sendable {
                 // Re-sort the chats array to maintain order (e.g., newest first by date)
                 // This matches the sorting in fetchPersistedChats and newChat.
                 self.chats.sort(by: { $0.date > $1.date })
+            }
+        }
+    }
+
+    func updateProvisionaryInputText(for chatID: String, text: String?) async throws {
+        try await backgroundContext.perform {
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
+            fetchRequest.fetchLimit = 1
+
+            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+                throw OACoreDataError.chatNotFound
+            }
+
+            chatMO.provisionaryInputText = text
+            try self.backgroundContext.save()
+
+            // Update the OAChat in the @Published chats array
+            if let index = self.chats.firstIndex(where: { $0.id == chatID }) {
+                let oldOAChat = self.chats[index]
+                let updatedOAChat = OAChat(id: oldOAChat.id,
+                                           date: oldOAChat.date,
+                                           title: oldOAChat.title,
+                                           provisionaryInputText: text,
+                                           selectedModel: oldOAChat.selectedModel,
+                                           messages: oldOAChat.messages)
+                self.chats[index] = updatedOAChat
+            }
+        }
+    }
+
+    func updateSelectedModelFor(_ chatId: String?, model: OpenAI.Model) async throws {
+        guard let chatId else { return }
+        try await backgroundContext.perform {
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
+            fetchRequest.fetchLimit = 1
+
+            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+                throw OACoreDataError.chatNotFound
+            }
+
+            chatMO.selectedModel = model.rawValue
+            try self.backgroundContext.save()
+
+            // Update the OAChat in the @Published chats array
+            if let index = self.chats.firstIndex(where: { $0.id == chatId }) {
+                let oldOAChat = self.chats[index]
+                let updatedOAChat = OAChat(id: oldOAChat.id,
+                                           date: oldOAChat.date,
+                                           title: oldOAChat.title,
+                                           provisionaryInputText: oldOAChat.provisionaryInputText,
+                                           selectedModel: model,
+                                           messages: oldOAChat.messages)
+                self.chats[index] = updatedOAChat
             }
         }
     }

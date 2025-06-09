@@ -8,6 +8,7 @@
 
 import Foundation
 import OpenAI
+import Combine
 
 @MainActor
 final class OAChatDataManager {
@@ -17,32 +18,52 @@ final class OAChatDataManager {
     private let coreDataManager: OACoreDataManager
 
     private var currentChatId: String? = nil
-    /*private*/ var messages: [OAChatMessage] = []
+    var messages: [OAChatMessage] = []
 
     var onMessagesUpdated: ((_ reconfigureItemID: String?) -> Void)?
+
+    @Published
+    var selectedModel: OpenAI.Model
 
     init(coreDataManager: OACoreDataManager) {
         self.coreDataManager = coreDataManager
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
-            conversation = nil
+            self.conversation = nil
+            self.selectedModel = .gpt41nano
             print("Error retrieving API_KEY")
             return
         }
-        conversation = Conversation(authToken: apiKey, using: .gpt41nano)
-    }
+        self.selectedModel = .gpt41nano
+        self.conversation = Conversation(authToken: apiKey, using: .gpt41nano)
+     }
 
     deinit {
         observationTask?.cancel()
     }
 
-    func loadChat(with id: String) async {
+    func updateModel(_ model: OpenAI.Model) async {
+        try? await self.coreDataManager.updateSelectedModelFor(self.currentChatId, model: model)
+        self.selectedModel = model
+        conversation?.updateConfig { config in
+            config.model = model
+        }
+    }
 
+    func saveProvisionaryTextInput(_ inputText: String?) async {
+        guard let chatId = self.currentChatId, let inputText else { return }
+        do {
+            try? await self.coreDataManager.updateProvisionaryInputText(for: chatId, text: inputText)
+        }
+    }
+
+    @discardableResult
+    func loadChat(with id: String) async -> OAChat? {
         guard let chat = self.coreDataManager.chats.first(where: { $0.id == id }) else {
             print("Error: Chat with ID \(id) not found in dataManager.chats")
             self.setCurrentChat(nil)
             self.messages = []
             self.onMessagesUpdated?(nil)
-            return
+            return nil
         }
         self.setCurrentChat(chat.id)
         self.messages = [] // Clear any previous messages
@@ -54,6 +75,9 @@ final class OAChatDataManager {
             print("Failed to load messages for chat \(chat.id): \(error)")
             // Handle error (e.g., show an alert to the user)
         }
+
+        await self.updateModel(chat.selectedModel)
+        return chat
     }
 
     func getChatTitle(for chatId: String) -> String? {

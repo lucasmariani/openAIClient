@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import OpenAI
 import Combine
 
 class OASidebarViewController: UIViewController {
@@ -27,7 +28,6 @@ class OASidebarViewController: UIViewController {
 
     enum Item: Hashable {
         case chat(String) // Chat ID
-        case newChat
     }
 
     init(coreDataManager: OACoreDataManager) {
@@ -46,7 +46,8 @@ class OASidebarViewController: UIViewController {
         setupBindings()
 
         Task {
-            await loadInitialChats()
+            await self.loadInitialChats()
+            self.selectLatestChat()
         }
     }
 
@@ -59,7 +60,10 @@ class OASidebarViewController: UIViewController {
         let addButton = UIBarButtonItem(
             systemItem: .add,
             primaryAction: UIAction { [weak self] _ in
-                self?.addNewChat()
+                Task {
+                    await self?.addNewChat()
+                    self?.selectLatestChat()
+                }
             }
         )
 
@@ -100,16 +104,6 @@ class OASidebarViewController: UIViewController {
             cell.accessories = []
         }
 
-        let newChatCellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, Void> { cell, indexPath, _ in
-            var content = cell.defaultContentConfiguration()
-            content.text = "New Chat"
-            content.image = UIImage(systemName: "plus.circle.fill")
-            content.imageProperties.tintColor = .systemGreen
-
-            cell.contentConfiguration = content
-            cell.accessories = []
-        }
-
         // Header registration
         let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewListCell>(
             elementKind: UICollectionView.elementKindSectionHeader
@@ -124,8 +118,6 @@ class OASidebarViewController: UIViewController {
             switch item {
             case .chat(let chatID):
                 return collectionView.dequeueConfiguredReusableCell(using: chatCellRegistration, for: indexPath, item: chatID)
-            case .newChat:
-                return collectionView.dequeueConfiguredReusableCell(using: newChatCellRegistration, for: indexPath, item: ())
             }
         }
 
@@ -148,14 +140,12 @@ class OASidebarViewController: UIViewController {
                 self?.updateSnapshot(with: chats.map { $0.id })
             }
             .store(in: &cancellables)
+
     }
 
     private func updateSnapshot(with chatIDs: [String]) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.chats])
-
-        // Add new chat button first
-        snapshot.appendItems([.newChat], toSection: .chats)
 
         // Add existing chats
         let chatItems = chatIDs.map { Item.chat($0) }
@@ -164,9 +154,17 @@ class OASidebarViewController: UIViewController {
         dataSource.apply(snapshot, animatingDifferences: true)
     }
 
+    private func selectLatestChat() {
+        if self.coreDataManager.chats.isEmpty { return }
+        let indexPath = IndexPath(item: 0, section: 0)
+        self.collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+        self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
+    }
+
     func loadInitialChats() async {
         do {
             try await coreDataManager.fetchPersistedChats()
+
         } catch {
             await MainActor.run {
                 showErrorAlert(message: "Failed to load chats: \(error.localizedDescription)")
@@ -174,14 +172,12 @@ class OASidebarViewController: UIViewController {
         }
     }
 
-    @objc private func addNewChat() {
-        Task {
-            do {
-                try await coreDataManager.newChat()
-            } catch {
-                await MainActor.run {
-                    showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
-                }
+    @objc private func addNewChat() async {
+        do {
+            try await coreDataManager.newChat()
+        } catch {
+            await MainActor.run {
+                showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
             }
         }
     }
@@ -208,8 +204,6 @@ extension OASidebarViewController: UICollectionViewDelegate {
                     splitViewController?.show(.secondary)
                 }
             }
-        case .newChat:
-            addNewChat()
         }
 
         collectionView.deselectItem(at: indexPath, animated: true)
