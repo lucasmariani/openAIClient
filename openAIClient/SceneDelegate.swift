@@ -10,8 +10,8 @@ import UIKit
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-    lazy var coreDataManager = OACoreDataManager()
-    lazy var chatDataManager = OAChatDataManager(coreDataManager: self.coreDataManager)
+//    var coreDataManager: OACoreDataManager? = OACoreDataManager()
+//    var chatDataManager: OAChatDataManager? = OAChatDataManager(coreDataManager: self.coreDataManager)
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
@@ -26,9 +26,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         splitViewController.preferredSplitBehavior = .tile
         splitViewController.displayModeButtonVisibility = .automatic
 
-        let sidebar = OASidebarViewController(coreDataManager: self.coreDataManager)
+        let coreDataManager = OACoreDataManager()
+        let chatDataManager = OAChatDataManager(coreDataManager: coreDataManager)
+
+        let sidebar = OASidebarViewController(coreDataManager: coreDataManager)
         let sidebarNav = UINavigationController(rootViewController: sidebar)
-        let chatVC = OAChatViewController(chatDataManager: self.chatDataManager)
+
+        let chatVC = OAChatViewController(chatDataManager: chatDataManager)
         let detailNav = UINavigationController(rootViewController: chatVC)
 
         splitViewController.setViewController(sidebarNav, for: .primary)

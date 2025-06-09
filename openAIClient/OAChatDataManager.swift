@@ -41,6 +41,14 @@ final class OAChatDataManager {
         observationTask?.cancel()
     }
 
+    func loadLatestChat() {
+        if let latestChat = self.coreDataManager.chats.first {
+            Task {
+                await self.loadChat(with: latestChat.id)
+            }
+        }
+    }
+
     func updateModel(_ model: OpenAI.Model) async {
         try? await self.coreDataManager.updateSelectedModelFor(self.currentChatId, model: model)
         self.selectedModel = model

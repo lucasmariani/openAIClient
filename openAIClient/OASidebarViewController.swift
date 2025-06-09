@@ -44,11 +44,6 @@ class OASidebarViewController: UIViewController {
         setupNavigationBar()
         setupDataSource()
         setupBindings()
-
-        Task {
-            await self.loadInitialChats()
-            self.selectLatestChat()
-        }
     }
 
     private func setupNavigationBar() {
@@ -68,10 +63,6 @@ class OASidebarViewController: UIViewController {
         )
 
         navigationItem.rightBarButtonItem = addButton
-
-        // Optional: Add search if you want
-        // let searchController = UISearchController(searchResultsController: nil)
-        // navigationItem.searchController = searchController
     }
 
     private func setupCollectionView() {
@@ -161,16 +152,16 @@ class OASidebarViewController: UIViewController {
         self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
     }
 
-    func loadInitialChats() async {
-        do {
-            try await coreDataManager.fetchPersistedChats()
-
-        } catch {
-            await MainActor.run {
-                showErrorAlert(message: "Failed to load chats: \(error.localizedDescription)")
-            }
-        }
-    }
+//    func loadInitialChats() async {
+//        do {
+//            try await coreDataManager.fetchPersistedChats()
+//
+//        } catch {
+//            await MainActor.run {
+//                showErrorAlert(message: "Failed to load chats: \(error.localizedDescription)")
+//            }
+//        }
+//    }
 
     @objc private func addNewChat() async {
         do {

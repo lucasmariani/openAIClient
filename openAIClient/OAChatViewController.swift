@@ -52,8 +52,10 @@ class OAChatViewController: UIViewController {
         tableView.allowsSelection = false
         setupSubviews()
         setupDataSource()
+        setupNavBar()
+        self.chatDataManager.loadLatestChat()
 
-        chatDataManager.$selectedModel
+        self.chatDataManager.$selectedModel
             .sink { [weak self] value in
                 guard let self = self, isMacCatalyst else { return }
                 if let button = self.navigationItem.rightBarButtonItem {
@@ -75,7 +77,6 @@ class OAChatViewController: UIViewController {
     }
 
     private func setupNavBar() {
-        // Add model selection button
         let modelButton = UIBarButtonItem(
             image: UIImage(systemName: "brain.head.profile"),
             style: .plain,

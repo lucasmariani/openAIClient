@@ -20,6 +20,9 @@ final class OACoreDataManager: @unchecked Sendable {
     init() {
         backgroundContext = OACoreDataStack.shared.container.newBackgroundContext()
         backgroundContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
+        Task {
+            try? await self.fetchPersistedChats()
+        }
     }
 
     func fetchPersistedChats() async throws {
