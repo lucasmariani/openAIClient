@@ -52,10 +52,6 @@ class OAChatViewController: UIViewController {
         tableView.allowsSelection = false
         setupSubviews()
         setupDataSource()
-        setupKeyboardObservers()
-
-        let tap = UITapGestureRecognizer(target: self, action: #selector(debugTap))
-        inputField.addGestureRecognizer(tap)
 
         chatDataManager.$selectedModel
             .sink { [weak self] value in
@@ -68,14 +64,10 @@ class OAChatViewController: UIViewController {
             .store(in: &cancellables)
     }
 
-    @objc private func debugTap() {
-        print("TextField tapped")
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        setupKeyboardObservers()
     }
-
-//    override func viewDidAppear(_ animated: Bool) {
-//        super.viewDidAppear(animated)
-//        self.inputField.becomeFirstResponder()
-//    }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
@@ -139,8 +131,6 @@ class OAChatViewController: UIViewController {
             // Input Container View
             inputContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputContainerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            // Let inputContainerView's height be determined by its content + padding
 
             // Input Field
             inputField.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
@@ -308,7 +298,7 @@ extension OAChatViewController {
         let intersection = self.view.bounds.intersection(keyboardFrameInView)
         let keyboardHeight = intersection.height
 
-        inputContainerBottomConstraint?.constant = -keyboardHeight
+        inputContainerBottomConstraint?.constant = -keyboardHeight + view.safeAreaInsets.bottom
 
         UIView.animate(withDuration: duration, delay: 0, options: UIView.AnimationOptions(rawValue: curve), animations: {
             self.view.layoutIfNeeded()
