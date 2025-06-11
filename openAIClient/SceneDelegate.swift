@@ -10,8 +10,6 @@ import UIKit
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-//    var coreDataManager: OACoreDataManager? = OACoreDataManager()
-//    var chatDataManager: OAChatDataManager? = OAChatDataManager(coreDataManager: self.coreDataManager)
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
@@ -23,7 +21,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let splitViewController = UISplitViewController(style: .doubleColumn)
 
         splitViewController.preferredDisplayMode = .automatic
-        splitViewController.preferredSplitBehavior = .tile
+        splitViewController.preferredSplitBehavior = .automatic
         splitViewController.displayModeButtonVisibility = .automatic
 
         let coreDataManager = OACoreDataManager()
@@ -61,6 +59,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         // Called when the scene has moved from an inactive state to an active state.
         // Use this method to restart any tasks that were paused (or not yet started) when the scene was inactive.
+        
+        // Note: CloudKit sync is handled automatically via remote change notifications
+        // No manual sync needed here since we set up proper observers
     }
 
     func sceneWillResignActive(_ scene: UIScene) {

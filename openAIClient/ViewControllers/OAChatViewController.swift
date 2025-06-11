@@ -6,7 +6,7 @@
 //
 
 import UIKit
-import OpenAI
+import SwiftOpenAI
 import Combine
 
 var isMacCatalyst: Bool {
@@ -29,7 +29,7 @@ class OAChatViewController: UIViewController {
     private var dataSource: UITableViewDiffableDataSource<Int, String>!
 
     private let chatDataManager: OAChatDataManager
-    private var currentlySelectedModel: OpenAI.Model?
+    private var currentlySelectedModel: SwiftOpenAI.Model?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -40,19 +40,18 @@ class OAChatViewController: UIViewController {
             self?.updateSnapshot(reconfiguringItemID: reconfiguringItemID)
         }
         self.currentlySelectedModel = self.chatDataManager.selectedModel
-        title = "Chat"
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-        inputField.delegate = self
-        tableView.allowsSelection = false
-        setupSubviews()
-        setupDataSource()
-        setupNavBar()
+        self.view.backgroundColor = .systemBackground
+        self.inputField.delegate = self
+        self.tableView.allowsSelection = false
+        self.setupSubviews()
+        self.setupDataSource()
+        self.setupNavBar()
         self.chatDataManager.loadLatestChat()
 
         self.chatDataManager.$selectedModel
@@ -77,6 +76,9 @@ class OAChatViewController: UIViewController {
     }
 
     private func setupNavBar() {
+        self.title = nil
+        self.navigationItem.largeTitleDisplayMode = .never
+
         let modelButton = UIBarButtonItem(
             image: UIImage(systemName: "brain.head.profile"),
             style: .plain,
@@ -91,14 +93,25 @@ class OAChatViewController: UIViewController {
             modelButton.target = self
             modelButton.action = #selector(didTapModelButton)
         }
-
     }
 
     private func setupSubviews() {
         // Input Container
-        inputContainerView.backgroundColor = .systemGray6
+
+
+//        self.view.backgroundColor = .red
+//        self.tableView.backgroundColor = .blue
+//        inputContainerView.backgroundColor = .yellow
+
+//        inputContainerView.backgroundColor = .systemGray6
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
+
+//        let effectView = UIVisualEffectView()
+//        let glassEffect = UIGlassEffect()
+//        effectView.effect = glassEffect
+//        inputContainerView.addSubview(effectView)
+
 
         // Input Field
         inputField.translatesAutoresizingMaskIntoConstraints = false
@@ -115,6 +128,10 @@ class OAChatViewController: UIViewController {
         sendButton.setImage(sendButtonImage, for: .normal)
         sendButton.tintColor = .label
         sendButton.addTarget(self, action: #selector(didTapSendButton), for: .touchUpInside)
+
+#if !targetEnvironment(macCatalyst)
+        sendButton.configuration = .glass()
+#endif
         inputContainerView.addSubview(sendButton)
 
         // TableView
@@ -130,8 +147,11 @@ class OAChatViewController: UIViewController {
         // Layout Constraints
         NSLayoutConstraint.activate([
             // Input Container View
-            inputContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            inputContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+
+//            effectView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
+//            effectView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
 
             // Input Field
             inputField.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
@@ -142,6 +162,7 @@ class OAChatViewController: UIViewController {
             sendButton.leadingAnchor.constraint(equalTo: inputField.trailingAnchor, constant: 8),
             sendButton.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor, constant: -8),
             sendButton.centerYAnchor.constraint(equalTo: inputField.centerYAnchor),
+            sendButton.heightAnchor.constraint(equalTo: inputField.heightAnchor),
             sendButton.widthAnchor.constraint(equalToConstant: 64), // Or make it intrinsic
 
             // TableView
@@ -160,18 +181,20 @@ class OAChatViewController: UIViewController {
             guard let cell = tableView.dequeueReusableCell(withIdentifier: "chatMessageCell", for: indexPath) as? OAChatMessageCell else {
                 return UITableViewCell()
             }
-            cell.prepareForReuse()
+            
+            // Find the message efficiently
             if let message = self.chatDataManager.messages.first(where: { $0.id == messageID }) {
                 cell.configure(with: message.content, role: message.role)
+            } else {
+                // Handle case where message might not be found (shouldn't happen, but safety first)
+                cell.configure(with: "Message not found", role: .system)
             }
             return cell
-
         }
         self.tableView.dataSource = self.dataSource
     }
 
     private func updateSnapshot(reconfiguringItemID: String? = nil, animatingDifferences: Bool = true) {
-        print("UPDATE SNAPSHOT - Reconfiguring ID: \(reconfiguringItemID ?? "none")")
         let currentMessages = self.chatDataManager.messages
         let messageIDs = currentMessages.map { $0.id }
 
@@ -182,18 +205,25 @@ class OAChatViewController: UIViewController {
         // If a specific item ID needs reconfiguring, tell the snapshot
         if let itemID = reconfiguringItemID, messageIDs.contains(itemID) {
             snapshot.reconfigureItems([itemID])
-            print("Snapshot: Marked item \(itemID) for reconfiguration.")
         }
 
-        self.dataSource.apply(snapshot, animatingDifferences: animatingDifferences) {
-            // Optional: Completion block for debugging
-            print("Snapshot applied. Message count: \(currentMessages.count).")
+        // Apply snapshot with appropriate animation
+        let shouldAnimate = animatingDifferences && currentMessages.count <= 100 // Disable animation for large lists
+        
+        self.dataSource.apply(snapshot, animatingDifferences: shouldAnimate) { [weak self] in
+            self?.scrollToBottomIfNeeded()
         }
-
-        if !currentMessages.isEmpty {
+    }
+    
+    private func scrollToBottomIfNeeded() {
+        let currentMessages = self.chatDataManager.messages
+        guard !currentMessages.isEmpty else { return }
+        
+        DispatchQueue.main.async {
             let lastIndexPath = IndexPath(item: currentMessages.count - 1, section: 0)
-            if self.tableView.numberOfSections > 0 && self.tableView.numberOfRows(inSection: 0) > lastIndexPath.row {
-                 self.tableView.scrollToRow(at: lastIndexPath, at: .bottom, animated: true)
+            if self.tableView.numberOfSections > 0 && 
+               self.tableView.numberOfRows(inSection: 0) > lastIndexPath.row {
+                self.tableView.scrollToRow(at: lastIndexPath, at: .bottom, animated: true)
             }
         }
     }
@@ -203,7 +233,7 @@ class OAChatViewController: UIViewController {
         if let chat = await self.chatDataManager.loadChat(with: id) {
             self.inputField.text = chat.provisionaryInputText
         }
-        self.title = self.chatDataManager.getChatTitle(for: id) ?? "Chat"
+//        self.title = self.chatDataManager.getChatTitle(for: id) ?? "Chat"
     }
     
     @objc private func didTapSendButton() {
@@ -234,7 +264,7 @@ class OAChatViewController: UIViewController {
 
     @objc private func presentModelSelectionActionSheet() {
         let alert = UIAlertController(title: "Choose Model", message: nil, preferredStyle: .actionSheet)
-        for model in OpenAI.Model.allCases.sorted(by: { $0.displayName < $1.displayName }) {
+        for model in SwiftOpenAI.Model.allCases.sorted(by: { $0.displayName < $1.displayName }) {
             let isSelected = (self.chatDataManager.selectedModel == model)
             let action = UIAlertAction(
                 title: model.displayName + (isSelected ? " ✓" : ""),
@@ -254,7 +284,7 @@ class OAChatViewController: UIViewController {
     }
 
     private func makeModelSelectionMenu() -> UIMenu {
-        return UIMenu(title: "Choose Model", children: OpenAI.Model.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
+        return UIMenu(title: "Choose Model", children: SwiftOpenAI.Model.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
             let isSelected = (self.currentlySelectedModel == model)
             return UIAction(
                 title: model.displayName,

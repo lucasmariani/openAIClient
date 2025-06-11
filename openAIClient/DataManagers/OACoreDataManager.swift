@@ -7,7 +7,7 @@
 
 import CoreData
 import Combine
-import OpenAI
+import SwiftOpenAI
 
 final class OACoreDataManager: @unchecked Sendable {
 
@@ -22,6 +22,17 @@ final class OACoreDataManager: @unchecked Sendable {
         backgroundContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
         Task {
             try? await self.fetchPersistedChats()
+        }
+        
+        // Listen for CloudKit remote changes
+        NotificationCenter.default.addObserver(
+            forName: .cloudKitDataChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task {
+                await self?.handleRemoteChanges()
+            }
         }
     }
 
@@ -94,16 +105,30 @@ final class OACoreDataManager: @unchecked Sendable {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
+                print("❌ Chat not found when fetching messages for ID: \(chatID)")
                 throw OACoreDataError.chatNotFound
             }
 
             // Assuming 'messages' is the relationship name on your 'Chat' entity
             // and it yields a Set of 'Message' (your Core Data Message entity)
             guard let messageMOs = chatMO.messages as? Set<Message> else {
+                print("⚠️ No messages found or relationship not set up for chat: \(chatID)")
                 return [] // No messages or relationship not set up as expected
             }
 
-            let unsortedMessages = messageMOs.compactMap { OAChatMessage(message: $0) }
+            print("🔍 Found \(messageMOs.count) message MOs for chat: \(chatID)")
+            for messageMO in messageMOs {
+                print("  - Message: Role=\(messageMO.role ?? "nil"), ID=\(messageMO.id ?? "nil"), Content length=\(messageMO.content?.count ?? 0)")
+            }
+
+            let unsortedMessages = messageMOs.compactMap { 
+                let message = OAChatMessage(message: $0)
+                if message == nil {
+                    print("❌ Failed to create OAChatMessage from MO: Role=\(($0.role) ?? "nil"), ID=\($0.id ?? "nil")")
+                }
+                return message
+            }
+            print("✅ Successfully converted \(unsortedMessages.count) messages for chat: \(chatID)")
             return unsortedMessages.sorted(by: { $0.date < $1.date })
         }
     }
@@ -151,6 +176,7 @@ final class OACoreDataManager: @unchecked Sendable {
         }
 
     func addMessage(_ message: OAChatMessage, toChatID chatID: String) async throws {
+        print("🔵 Adding message to Core Data - Role: \(message.role.rawValue), ID: \(message.id), Content length: \(message.content.count)")
         try await backgroundContext.perform {
             // 1. Fetch the Chat Managed Object
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
@@ -158,6 +184,7 @@ final class OACoreDataManager: @unchecked Sendable {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
+                print("❌ Chat not found for ID: \(chatID)")
                 throw OACoreDataError.chatNotFound
             }
 
@@ -167,6 +194,7 @@ final class OACoreDataManager: @unchecked Sendable {
             messageMO.role = message.role.rawValue
             messageMO.content = message.content
             messageMO.date = message.date
+            messageMO.chatId = chatID // Set the chatId attribute
             // messageMO.chat = chatMO // This relationship is typically set by adding to the collection
 
             // 3. Add the new message to the chat's messages relationship
@@ -175,6 +203,7 @@ final class OACoreDataManager: @unchecked Sendable {
             // If not, use: chatMO.mutableSetValue(forKey: "messages").add(messageMO)
             chatMO.addToMessages(messageMO)
 
+            print("🔵 Created message MO - Role: \(messageMO.role ?? "nil"), ChatID: \(messageMO.chatId ?? "nil")")
 
             // 4. Update the chat's main date to the new message's date
             // This is useful for sorting chats by last activity.
@@ -182,6 +211,7 @@ final class OACoreDataManager: @unchecked Sendable {
 
             // 5. Save the context
             try self.backgroundContext.save()
+            print("✅ Successfully saved message to Core Data - Role: \(message.role.rawValue)")
 
             // 6. Update the OAChat object in the @Published chats array
             // This ensures the sidebar reflects the new activity date and re-sorts if necessary.
@@ -232,7 +262,7 @@ final class OACoreDataManager: @unchecked Sendable {
         }
     }
 
-    func updateSelectedModelFor(_ chatId: String?, model: OpenAI.Model) async throws {
+    func updateSelectedModelFor(_ chatId: String?, model: SwiftOpenAI.Model) async throws {
         guard let chatId else { return }
         try await backgroundContext.perform {
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
@@ -243,7 +273,7 @@ final class OACoreDataManager: @unchecked Sendable {
                 throw OACoreDataError.chatNotFound
             }
 
-            chatMO.selectedModel = model.rawValue
+            chatMO.selectedModel = model.value
             try self.backgroundContext.save()
 
             // Update the OAChat in the @Published chats array
@@ -258,5 +288,33 @@ final class OACoreDataManager: @unchecked Sendable {
                 self.chats[index] = updatedOAChat
             }
         }
+    }
+    
+    // MARK: - Sync Methods
+    
+    @MainActor
+    private func handleRemoteChanges() async {
+        print("🔄 Handling remote CloudKit changes")
+        do {
+            try await fetchPersistedChats()
+            print("✅ Successfully refreshed chats from CloudKit")
+        } catch {
+            print("❌ Failed to refresh chats after remote changes: \(error)")
+        }
+    }
+    
+    func checkForUpdates() async {
+        print("🔍 Checking for CloudKit updates")
+        do {
+            try await fetchPersistedChats()
+            print("✅ Update check completed")
+        } catch {
+            print("❌ Failed to check for updates: \(error)")
+        }
+    }
+    
+    func refreshMessages(for chatID: String) async throws -> [OAChatMessage] {
+        print("🔄 Refreshing messages for chat: \(chatID)")
+        return try await fetchMessages(for: chatID)
     }
 }

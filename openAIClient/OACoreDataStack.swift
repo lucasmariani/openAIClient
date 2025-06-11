@@ -6,39 +6,55 @@
 //
 
 import CoreData
+import CloudKit
 
-//final class CoreDataStack {
-//    @MainActor static let shared = CoreDataStack(modelName: "DataModel")
-//    let container: NSPersistentContainer
-//
-//    private init(modelName: String) {
-//        container = NSPersistentContainer(name: modelName)
-//        container.loadPersistentStores { _, error in
-//            if let error = error { fatalError("Core Data store failed: \(error)") }
-//        }
-//        container.viewContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
-//    }
-//
-//    /// UI code (main thread) should use this
-//    var viewContext: NSManagedObjectContext { container.viewContext }
-//
-//    /// For background/actor work
-//    func newBackgroundContext() -> NSManagedObjectContext {
-//        container.newBackgroundContext()
-//    }
-//}
+extension Notification.Name {
+    static let cloudKitDataChanged = Notification.Name("cloudKitDataChanged")
+}
 
 final class OACoreDataStack: Sendable {
     static let shared = OACoreDataStack()
 
-    let container: NSPersistentContainer
+    let container: NSPersistentCloudKitContainer
 
     private init() {
-        container = NSPersistentContainer(name: "DataModel")
-        container.loadPersistentStores { _, error in
+        container = NSPersistentCloudKitContainer(name: "DataModel")
+        
+        // Configure for CloudKit
+        guard let description = container.persistentStoreDescriptions.first else {
+            fatalError("Failed to retrieve a persistent store description.")
+        }
+        
+        description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+        description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        
+        // Debug CloudKit container
+        print("CloudKit container identifier: \(container.persistentStoreDescriptions.first?.cloudKitContainerOptions?.containerIdentifier ?? "nil")")
+        
+        // Check iCloud account status
+        CKContainer.default().accountStatus { status, error in
+            print("iCloud account status: \(status.rawValue)")
+            if let error = error {
+                print("iCloud account error: \(error)")
+            }
+        }
+        
+        container.loadPersistentStores { storeDescription, error in
             if let error = error as NSError? {
+                print("Core Data error: \(error), \(error.userInfo)")
                 fatalError("Unresolved error: \(error), \(error.userInfo)")
             }
+            print("Loaded store: \(storeDescription)")
+        }
+        
+        // Set up remote change notifications
+        NotificationCenter.default.addObserver(
+            forName: .NSPersistentStoreRemoteChange,
+            object: container.persistentStoreCoordinator,
+            queue: .main
+        ) { _ in
+            print("🔄 Remote changes detected from CloudKit")
+            NotificationCenter.default.post(name: .cloudKitDataChanged, object: nil)
         }
     }
 

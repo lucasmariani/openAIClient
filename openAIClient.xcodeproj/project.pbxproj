@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A044803E2DE8769300DF2194 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = A044803D2DE8769300DF2194 /* OpenAI */; };
 		A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = A07A793B2DF5C0C5006540A8 /* Highlightr */; };
+		A0920C622DF98ECC00DAC5E4 /* SwiftOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = A0920C612DF98ECC00DAC5E4 /* SwiftOpenAI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,8 +41,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0920C622DF98ECC00DAC5E4 /* SwiftOpenAI in Frameworks */,
 				A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */,
-				A044803E2DE8769300DF2194 /* OpenAI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -93,8 +93,8 @@
 			);
 			name = openAIClient;
 			packageProductDependencies = (
-				A044803D2DE8769300DF2194 /* OpenAI */,
 				A07A793B2DF5C0C5006540A8 /* Highlightr */,
+				A0920C612DF98ECC00DAC5E4 /* SwiftOpenAI */,
 			);
 			productName = openAIClient;
 			productReference = A01FFDCD2DD79870004FD53C /* openAIClient.app */;
@@ -125,8 +125,8 @@
 			mainGroup = A01FFDC42DD79870004FD53C;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A044801B2DE874B100DF2194 /* XCLocalSwiftPackageReference "../responses-fork" */,
 				A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */,
+				A0920C602DF98ECC00DAC5E4 /* XCLocalSwiftPackageReference "../SwiftOpenAi-fork" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A01FFDCE2DD79870004FD53C /* Products */;
@@ -166,6 +166,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = openAIClient/openAIClient.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G23224SBC9;
@@ -175,20 +177,22 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.rianamiCorp.openAIClient;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rianamiCorp.aiChat2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -197,6 +201,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = openAIClient/openAIClient.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G23224SBC9;
@@ -206,20 +212,22 @@
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.rianamiCorp.openAIClient;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rianamiCorp.aiChatClient;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};
@@ -368,9 +376,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A044801B2DE874B100DF2194 /* XCLocalSwiftPackageReference "../responses-fork" */ = {
+		A0920C602DF98ECC00DAC5E4 /* XCLocalSwiftPackageReference "../SwiftOpenAi-fork" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = "../responses-fork";
+			relativePath = "../SwiftOpenAi-fork";
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -386,15 +394,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A044803D2DE8769300DF2194 /* OpenAI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A044801B2DE874B100DF2194 /* XCLocalSwiftPackageReference "../responses-fork" */;
-			productName = OpenAI;
-		};
 		A07A793B2DF5C0C5006540A8 /* Highlightr */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */;
 			productName = Highlightr;
+		};
+		A0920C612DF98ECC00DAC5E4 /* SwiftOpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SwiftOpenAI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

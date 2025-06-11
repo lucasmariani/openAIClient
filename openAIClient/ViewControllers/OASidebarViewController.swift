@@ -6,7 +6,7 @@
 //
 
 import UIKit
-import OpenAI
+import SwiftOpenAI
 import Combine
 
 class OASidebarViewController: UIViewController {
@@ -69,6 +69,30 @@ class OASidebarViewController: UIViewController {
         var layoutConfig = UICollectionLayoutListConfiguration(appearance: .sidebar)
         layoutConfig.headerMode = .supplementary
         layoutConfig.showsSeparators = false
+        
+        // Enable swipe-to-delete
+        layoutConfig.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+            guard let self = self,
+                  let item = self.dataSource.itemIdentifier(for: indexPath),
+                  case .chat(let chatID) = item else { return nil }
+            
+            let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
+                Task {
+                    do {
+                        try await self.coreDataManager.deleteChat(with: chatID)
+                        completion(true)
+                    } catch {
+                        await MainActor.run {
+                            self.showErrorAlert(message: "Failed to delete chat: \(error.localizedDescription)")
+                        }
+                        completion(false)
+                    }
+                }
+            }
+            deleteAction.image = UIImage(systemName: "trash")
+            
+            return UISwipeActionsConfiguration(actions: [deleteAction])
+        }
 
         let layout = UICollectionViewCompositionalLayout.list(using: layoutConfig)
 

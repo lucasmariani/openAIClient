@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23788.4" systemVersion="24F74" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="24233.11" systemVersion="25A5279m" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES" usedWithSwiftData="YES" userDefinedModelVersionIdentifier="">
     <entity name="Chat" representedClassName="Chat" syncable="YES" codeGenerationType="class">
         <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" optional="YES" attributeType="String"/>
-        <attribute name="provisionaryInputText" optional="YES" attributeType="String"/>
-        <attribute name="selectedModel" optional="YES" attributeType="String"/>
-        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="provisionaryInputText" optional="YES" attributeType="String" defaultValueString=""/>
+        <attribute name="selectedModel" optional="YES" attributeType="String" defaultValueString="gpt-4o-nano"/>
+        <attribute name="title" optional="YES" attributeType="String" defaultValueString="New Chat"/>
         <relationship name="messages" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Message" inverseName="chat" inverseEntity="Message"/>
     </entity>
     <entity name="Message" representedClassName="Message" syncable="YES" codeGenerationType="class">
