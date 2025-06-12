@@ -36,11 +36,16 @@ final class OACoreDataManager: @unchecked Sendable {
     }
 
     func fetchPersistedChats() async throws {
-        try await backgroundContext.perform {
+        let fetchedChats = try await backgroundContext.perform {
             let req: NSFetchRequest<Chat> = Chat.fetchRequest()
             req.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
             let chats = try self.backgroundContext.fetch(req)
-            self.chats = chats.compactMap { OAChat(chat: $0) }
+            return chats.compactMap { OAChat(chat: $0) }
+        }
+        
+        await MainActor.run {
+            fetchedChats.forEach {print("chat ID: \($0.id)")}
+            self.chats = fetchedChats
         }
     }
 
@@ -90,8 +95,7 @@ final class OACoreDataManager: @unchecked Sendable {
             messageFetchRequest.predicate = NSPredicate(format: "chat == %@", chatMO)
             // Sort by date first, then by ID as secondary sort for deterministic ordering
             messageFetchRequest.sortDescriptors = [
-                NSSortDescriptor(key: "date", ascending: true),
-                NSSortDescriptor(key: "id", ascending: true)
+                NSSortDescriptor(key: "date", ascending: true)
             ]
 
             let messageMOs = try self.backgroundContext.fetch(messageFetchRequest)

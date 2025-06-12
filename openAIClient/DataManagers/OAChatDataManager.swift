@@ -26,13 +26,8 @@ final class OAChatDataManager {
     private var streamingTask: Task<Void, Never>?
 
     // MARK: - Initialization
-
-    init(repository: ChatRepository) {
-        self.repository = repository
-        setupEventHandling()
-    }
     
-    convenience init(coreDataManager: OACoreDataManager) {
+    init(coreDataManager: OACoreDataManager) {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
             fatalError("Error retrieving API_KEY")
         }
@@ -40,9 +35,9 @@ final class OAChatDataManager {
         let configuration = URLSessionConfiguration.default
         let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
         let streamProvider = OAResponseStreamProvider(service: service, model: .gpt41nano)
-        let repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
-        
-        self.init(repository: repository)
+
+        self.repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
+        setupEventHandling()
     }
     
     deinit {

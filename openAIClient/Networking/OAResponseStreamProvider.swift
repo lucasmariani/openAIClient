@@ -135,8 +135,8 @@ public class OAResponseStreamProvider {
                 guard !Task.isCancelled else { break }
 
                 switch event {
-                case .responseCreated(let event):
-                    updateStreamingTimestamp(event.response.createdAt)
+                case .responseCreated:
+                    break
                     
                 case .outputTextDelta(let delta):
                     let deltaText = delta.delta
@@ -189,16 +189,16 @@ public class OAResponseStreamProvider {
     private func updateStreamingContent(_ content: String) {
         guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
         messages[index].content = content
+        updateStreamingTimestampFor(index: index)
     }
     
-    private func updateStreamingTimestamp(_ timestamp: Int) {
-        guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
-        messages[index].timestamp = Date(timeIntervalSince1970: TimeInterval(timestamp))
+    private func updateStreamingTimestampFor(index: Array.Index) {
+        messages[index].timestamp = Date.now
     }
 
     private func finalizeStreamingMessage(with content: String) {
         guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
-        
+        updateStreamingTimestampFor(index: index)
         messages[index].content = content.trimmingCharacters(in: .whitespacesAndNewlines)
         messages[index].isStreaming = false
     }

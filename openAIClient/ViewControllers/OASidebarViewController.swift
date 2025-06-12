@@ -109,10 +109,10 @@ class OASidebarViewController: UIViewController {
                   let chat = self.coreDataManager.chats.first(where: { $0.id == chatID }) else { return }
 
             var content = cell.defaultContentConfiguration()
-            content.text = self.formatDateForCellTitle(chat.date)
+            content.text = chat.title
             content.secondaryText = "Tap to open"
             content.image = UIImage(systemName: "message")
-            content.imageProperties.tintColor = .systemBlue
+            content.imageProperties.tintColor = .tertiaryLabel
 
             cell.contentConfiguration = content
             cell.accessories = []
@@ -138,13 +138,6 @@ class OASidebarViewController: UIViewController {
         dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
             return collectionView.dequeueConfiguredReusableSupplementary(using: headerRegistration, for: indexPath)
         }
-    }
-
-    private func formatDateForCellTitle(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "d MMMM - HH:mm"
-        return formatter.string(from: date)
     }
 
     private func setupBindings() {
@@ -175,17 +168,6 @@ class OASidebarViewController: UIViewController {
         self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
     }
 
-//    func loadInitialChats() async {
-//        do {
-//            try await coreDataManager.fetchPersistedChats()
-//
-//        } catch {
-//            await MainActor.run {
-//                showErrorAlert(message: "Failed to load chats: \(error.localizedDescription)")
-//            }
-//        }
-//    }
-
     @objc private func addNewChat() async {
         do {
             try await coreDataManager.newChat()
@@ -205,6 +187,7 @@ class OASidebarViewController: UIViewController {
 
 extension OASidebarViewController: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        // TODO: check that the cell isn't already selected. i dont want to reload everything just because.
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return }
 
         switch item {

@@ -232,7 +232,6 @@ class OAChatViewController: UIViewController {
         if let chat = await self.chatDataManager.loadChat(with: id) {
             self.inputField.text = chat.provisionaryInputText
         }
-//        self.title = self.chatDataManager.getChatTitle(for: id) ?? "Chat"
     }
     
     @objc private func didTapSendButton() {

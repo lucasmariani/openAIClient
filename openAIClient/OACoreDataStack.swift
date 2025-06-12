@@ -28,17 +28,6 @@ final class OACoreDataStack: Sendable {
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         
-        // Debug CloudKit container
-        print("CloudKit container identifier: \(container.persistentStoreDescriptions.first?.cloudKitContainerOptions?.containerIdentifier ?? "nil")")
-        
-        // Check iCloud account status
-        CKContainer.default().accountStatus { status, error in
-            print("iCloud account status: \(status.rawValue)")
-            if let error = error {
-                print("iCloud account error: \(error)")
-            }
-        }
-        
         container.loadPersistentStores { storeDescription, error in
             if let error = error as NSError? {
                 print("Core Data error: \(error), \(error.userInfo)")
@@ -46,7 +35,11 @@ final class OACoreDataStack: Sendable {
             }
             print("Loaded store: \(storeDescription)")
         }
-        
+
+//        Task {
+//            await resetCloudKitData()
+//        }
+
         // Set up remote change notifications
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
@@ -67,6 +60,25 @@ final class OACoreDataStack: Sendable {
     func newBackgroundContext() -> NSManagedObjectContext {
         container.newBackgroundContext()
     }
+
+    func resetCloudKitData() async {
+
+        guard let cloudKitStore = container.persistentStoreCoordinator.persistentStores.first(where: { store in
+            return store.type == NSSQLiteStoreType &&
+            store.options?[NSPersistentHistoryTrackingKey] as? Bool == true
+        }) else {
+            print("CloudKit store not found")
+            return
+        }
+
+
+        do {
+            try await container.purgeObjectsAndRecordsInZone(with: CKRecordZone.default().zoneID, in: cloudKitStore)
+        } catch {
+            print("Failed to purge CloudKit data: \(error)")
+        }
+    }
+
 
     func saveContext() {
         let context = mainContext
