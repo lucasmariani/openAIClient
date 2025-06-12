@@ -53,7 +53,7 @@ final class OACoreDataStack: Sendable {
             object: container.persistentStoreCoordinator,
             queue: .main
         ) { _ in
-            print("🔄 Remote changes detected from CloudKit")
+//            print("🔄 Remote changes detected from CloudKit")
             NotificationCenter.default.post(name: .cloudKitDataChanged, object: nil)
         }
     }

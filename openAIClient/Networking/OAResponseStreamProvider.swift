@@ -5,7 +5,6 @@
 //  Created by Lucas on 11.06.25.
 //
 
-import SwiftOpenAI
 import SwiftUI
 
 @MainActor
@@ -26,7 +25,7 @@ public class OAResponseStreamProvider {
         public let id = UUID()
         public let role: MessageRole
         public var content: String
-        public let timestamp: Date
+        public var timestamp: Date
         public var isStreaming = false
         public let responseId: String?
 
@@ -40,6 +39,10 @@ public class OAResponseStreamProvider {
     public var isStreaming = false
     public var currentStreamingMessage: OAResponseMessage?
     public var error: String?
+    
+    // Track streaming completion state
+    private var isTextComplete = false
+    private var isContentPartComplete = false
 
     // MARK: - Public Methods
 
@@ -75,6 +78,10 @@ public class OAResponseStreamProvider {
 
         currentStreamingMessage = nil
         isStreaming = false
+        
+        // Reset completion tracking
+        isTextComplete = false
+        isContentPartComplete = false
     }
 
     public func clearConversation() {
@@ -94,7 +101,7 @@ public class OAResponseStreamProvider {
         isStreaming = true
         error = nil
 
-        // Create streaming message placeholder
+        // Create streaming message placeholder with timestamp slightly after user message
         let streamingMessage = OAResponseMessage(
             role: .assistant,
             content: "",
@@ -105,13 +112,15 @@ public class OAResponseStreamProvider {
         currentStreamingMessage = streamingMessage
         
         var accumulatedText = ""
+        isTextComplete = false
+        isContentPartComplete = false
 
         do {
             // Build input array with conversation history
             var inputArray: [InputItem] = []
 
             // Add conversation history (exclude the current streaming placeholder)
-            let conversationHistory = messages.dropLast() // Only drop the streaming placeholder
+            let conversationHistory = messages.dropLast(2) // Only drop the streaming placeholder
             for message in conversationHistory {
                 // Skip empty messages and messages that are still streaming
                 guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -120,7 +129,9 @@ public class OAResponseStreamProvider {
                 let content = message.content
                 switch message.role {
                 case .user:
-                    inputArray.append(.message(InputMessage(role: "user", content: .text(content))))
+                    inputArray.append(.message(InputMessage(
+                        role: "user",
+                        content: .text(content))))
                 case .assistant:
                     inputArray.append(.message(InputMessage(
                         role: "assistant",
@@ -136,7 +147,8 @@ public class OAResponseStreamProvider {
                 model: self.model,
                 instructions: "You are a helpful assistant. Use the conversation history to provide contextual responses.",
                 maxOutputTokens: 1000,
-                previousResponseId: previousResponseId, temperature: 0.7)
+                previousResponseId: previousResponseId,
+                temperature: 0.7)
 
             let stream = try await service.responseCreateStream(parameters)
 
@@ -146,8 +158,9 @@ public class OAResponseStreamProvider {
                 }
 
                 switch event {
-                case .responseCreated:
+                case .responseCreated(let event):
                     // Response created event - we'll get the ID in responseCompleted
+                    updateStreamingMessage(with: event.response.createdAt) // response.createdAt
                     break
 
                 case .outputTextDelta(let delta):
@@ -156,16 +169,42 @@ public class OAResponseStreamProvider {
                     if !deltaText.isEmpty {
                         accumulatedText += deltaText
                         updateStreamingMessage(with: accumulatedText)
+                        print("📝 Delta received. Current length: \(accumulatedText.count)")
+                    }
+
+                case .outputTextDone(let textDone):
+                    // Use the final complete text from outputTextDone - this is authoritative
+                    let finalText = textDone.text
+                    accumulatedText = finalText // Override with complete text
+                    isTextComplete = true
+                    updateStreamingMessage(with: finalText)
+                    print("✅ Text completion received. Final text length: \(finalText.count)")
+
+                case .contentPartDone(let partDone):
+                    // Ensure content part is fully processed
+                    if let text = partDone.part.text {
+                        accumulatedText = text
+                        isContentPartComplete = true
+                        updateStreamingMessage(with: text)
+                        print("✅ Content part completion received. Text length: \(text.count)")
                     }
 
                 case .responseCompleted(let completed):
                     // Update previous response ID for conversation continuity
                     previousResponseId = completed.response.id
 
-                    // Finalize the message
-                    finalizeStreamingMessage(
-                        with: accumulatedText,
-                        responseId: completed.response.id)
+                    // Get final text from the completed response if available, otherwise use accumulated
+                    let finalText = completed.response.outputText ?? accumulatedText
+                    
+                    // Only finalize if text is complete or no text was expected
+                    if isTextComplete || isContentPartComplete || accumulatedText.isEmpty {
+                        finalizeStreamingMessage(with: finalText, responseId: completed.response.id)
+                        print("✅ Response completed. Using final text length: \(finalText.count)")
+                    } else {
+                        // Fallback: finalize with accumulated text if completion events weren't received
+                        print("⚠️ Response completed without text completion events. Using accumulated text.")
+                        finalizeStreamingMessage(with: accumulatedText, responseId: completed.response.id)
+                    }
 
                 case .responseFailed(let failed):
                     throw APIError.requestFailed(
@@ -187,7 +226,7 @@ public class OAResponseStreamProvider {
             print("Streaming error: \(errorMessage)")
 
             // Handle the error gracefully - finalize with partial content if available
-            if let streamingMessage = currentStreamingMessage, !accumulatedText.isEmpty {
+            if let _ = currentStreamingMessage, !accumulatedText.isEmpty {
                 finalizeStreamingMessage(with: accumulatedText, responseId: "error_\(UUID().uuidString)")
             } else {
                 // Remove empty streaming message on error
@@ -199,6 +238,10 @@ public class OAResponseStreamProvider {
 
         currentStreamingMessage = nil
         isStreaming = false
+        
+        // Reset completion tracking
+        isTextComplete = false
+        isContentPartComplete = false
     }
 
     private func updateStreamingMessage(with content: String) {
@@ -216,6 +259,17 @@ public class OAResponseStreamProvider {
         currentStreamingMessage?.content = content
     }
 
+    private func updateStreamingMessage(with dateString: Int) {
+        guard
+            let messageId = currentStreamingMessage?.id,
+            let index = messages.firstIndex(where: { $0.id == messageId })
+        else {
+            return
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(dateString))
+        messages[index].timestamp = date
+    }
+
     private func finalizeStreamingMessage(with content: String, responseId: String) {
         guard
             let messageId = currentStreamingMessage?.id,
@@ -229,6 +283,8 @@ public class OAResponseStreamProvider {
         message.content = content.trimmingCharacters(in: .whitespacesAndNewlines)
         message.isStreaming = false
         messages[index] = message
+        print("finalizeStreamingMessage CREATED AT: \(message.timestamp)")
+
     }
 }
 

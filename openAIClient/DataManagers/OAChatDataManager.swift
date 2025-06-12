@@ -7,8 +7,9 @@
 
 
 import Foundation
-import Combine
+@preconcurrency import Combine
 import SwiftUI
+import UIKit
 
 @MainActor
 final class OAChatDataManager {
@@ -29,7 +30,18 @@ final class OAChatDataManager {
     
     // Track last save times for periodic streaming saves
     private var lastStreamingSaveTimes: [String: Date] = [:]
-    private let streamingSaveInterval: TimeInterval = 2.5 // Save every 2.5 seconds during streaming
+    private let streamingSaveInterval: TimeInterval = 1.0 // Save every 1 second during streaming
+    
+    // Background task management
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var activeStreamingMessages: Set<String> = []
+    
+    // Combine publishers for reactive persistence
+    private var persistenceSubject = PassthroughSubject<PersistenceEvent, Never>()
+    private var cancellables = Set<AnyCancellable>()
+    
+    // Final save guarantee
+    private var pendingFinalSaves: [String: String] = [:] // messageId -> content
 
     init(coreDataManager: OACoreDataManager) {
         self.coreDataManager = coreDataManager
@@ -43,10 +55,23 @@ final class OAChatDataManager {
 
         self.selectedModel = .gpt41nano
         self.responseProvider = OAResponseStreamProvider(service: service, model: self.selectedModel)
+        
+        setupReactivePersistence()
+        setupAppLifecycleObservers()
+        setupChatDeletionObserver()
      }
 
     deinit {
         observationTask?.cancel()
+        cancellables.removeAll()
+        
+        // Clean up background task - store value to avoid self capture
+        let taskId = backgroundTaskId
+        if taskId != .invalid {
+            Task { @MainActor in
+                UIApplication.shared.endBackgroundTask(taskId)
+            }
+        }
     }
 
     func loadLatestChat() {
@@ -124,16 +149,22 @@ final class OAChatDataManager {
     }
 
     func setCurrentChat(_ chatId: String?) {
+        // Ensure any pending saves are completed before switching chats
+        Task {
+            await performFinalSaves()
+        }
+
+        self.lastStreamingSaveTimes.removeAll()
+        self.activeStreamingMessages.removeAll()
+        self.pendingFinalSaves.removeAll()
+
         guard let chatId else {
             self.currentChatId = nil
             // Clear streaming save tracking when changing chats
-            self.lastStreamingSaveTimes.removeAll()
             return
         }
 
         self.currentChatId = chatId
-        // Clear streaming save tracking when changing chats
-        self.lastStreamingSaveTimes.removeAll()
         self.setupConversationObserver()
     }
 
@@ -192,20 +223,20 @@ final class OAChatDataManager {
         guard let responseProvider = self.responseProvider else { return }
         
         // Get the last assistant message from the response provider
-        if let message = responseProvider.messages.last, message.role == .assistant {
-            let messageId = message.id.uuidString
-            
+        if let responseMessage = responseProvider.messages.last, responseMessage.role == .assistant {
+            let messageId = responseMessage.id.uuidString
+
             if let existingMessageIndex = self.messages.firstIndex(where: { $0.id == messageId }) {
                 // Update existing message
                 self.updateExistingMessage(with: messageId,
                                            at: existingMessageIndex,
-                                           content: message.content,
+                                           content: responseMessage.content,
                                            chatId: currentChatId,
-                                           isStreaming: message.isStreaming)
+                                           isStreaming: responseMessage.isStreaming)
             } else {
                 // Create new assistant message only if content is not empty
-                if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    self.createNewAssistant(message: message, currentChatId: currentChatId)
+                if !responseMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.createNewAssistant(message: responseMessage, currentChatId: currentChatId)
                 }
             }
         }
@@ -220,21 +251,29 @@ final class OAChatDataManager {
             return
         }
         
+        let messageId = message.id.uuidString
+        
         let assistantMessage = OAChatMessage(
-            id: message.id.uuidString,
+            id: messageId,
             role: .assistant,
             content: message.content,
-            date: Date.now
+            date: message.timestamp
         )
         self.messages.append(assistantMessage)
+        
+        // Track this as an active streaming message
+        activeStreamingMessages.insert(messageId)
+        
+        // Start background task to protect against termination
+        startBackgroundTask()
 
         // Save initial message to Core Data immediately when streaming starts
         Task(priority: .background) {
             do {
                 try await self.coreDataManager.addMessage(assistantMessage, toChatID: currentChatId, isStreaming: true)
-                print("✅ Successfully saved initial streaming message \(message.id) to Core Data")
+                print("✅ Successfully saved initial streaming message \(messageId) to Core Data")
             } catch {
-                print("❌ Failed to save initial streaming message \(message.id) to Core Data: \(error)")
+                print("❌ Failed to save initial streaming message \(messageId) to Core Data: \(error)")
             }
         }
         
@@ -249,30 +288,45 @@ final class OAChatDataManager {
             return
         }
 
-        let date = Date.now
         var messageToUpdate = self.messages[index]
-        messageToUpdate.update(with: content, date: date)
+        messageToUpdate.update(with: content, date: messageToUpdate.date)
         self.messages[index] = messageToUpdate
 
         print("Message with ID \(messageId) updated locally. Content length: \(content.count), isStreaming: \(isStreaming)")
 
-        // Determine if we should save to Core Data
+        // Always track the latest content for final save guarantee
+        pendingFinalSaves[messageId] = content
+        
+        // Determine if we should save to Core Data immediately
         let shouldSave: Bool
         if !isStreaming {
             // Always save when streaming is complete
             shouldSave = true
             // Remove from periodic save tracking
             lastStreamingSaveTimes.removeValue(forKey: messageId)
+            activeStreamingMessages.remove(messageId)
+            // End background task if no more active streaming messages
+            if activeStreamingMessages.isEmpty {
+                Task {
+                    await endBackgroundTaskAsync()
+                }
+            }
         } else {
             // Check if enough time has passed for periodic save during streaming
             let lastSaveTime = lastStreamingSaveTimes[messageId] ?? Date.distantPast
-            shouldSave = date.timeIntervalSince(lastSaveTime) >= streamingSaveInterval
+            let currentTime = Date.now
+            shouldSave = currentTime.timeIntervalSince(lastSaveTime) >= streamingSaveInterval
         }
 
         if shouldSave {
             // Update last save time for this message
             if isStreaming {
-                lastStreamingSaveTimes[messageId] = date
+                lastStreamingSaveTimes[messageId] = Date.now
+                // Send streaming update event
+                persistenceSubject.send(.streamingUpdate(messageId: messageId, content: content))
+            } else {
+                // Send completion event for final save
+                persistenceSubject.send(.messageCompleted(messageId: messageId, content: content))
             }
             
             Task(priority: .background) {
@@ -282,7 +336,7 @@ final class OAChatDataManager {
                         with: messageId,
                         chatId: chatId,
                         content: content,
-                        date: date,
+                        date: messageToUpdate.date,
                         isStreaming: isStreaming
                     )
                     print("✅ Successfully updated message \(messageId) in Core Data (streaming: \(isStreaming))")
@@ -293,7 +347,7 @@ final class OAChatDataManager {
                             id: messageId,
                             role: .assistant,
                             content: content,
-                            date: date
+                            date: messageToUpdate.date
                         )
                         try await self.coreDataManager.addMessage(assistantMessage, toChatID: chatId, isStreaming: isStreaming)
                         print("✅ Successfully created message \(messageId) in Core Data (streaming: \(isStreaming))")
@@ -306,5 +360,212 @@ final class OAChatDataManager {
 
         // Notify UI for updates
         self.onMessagesUpdated?(messageId)
+        
+        // Track final content for guaranteed save
+        if !isStreaming {
+            pendingFinalSaves[messageId] = content
+            persistenceSubject.send(.messageCompleted(messageId: messageId, content: content))
+        }
     }
+    
+    // MARK: - Reactive Persistence Setup
+    
+    private func setupReactivePersistence() {
+        // Debounce persistence events to avoid excessive saves
+        persistenceSubject
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            .sink { [weak self] event in
+                Task {
+                    await self?.handlePersistenceEvent(event)
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func handlePersistenceEvent(_ event: PersistenceEvent) async {
+        switch event {
+        case .messageCompleted(let messageId, let content):
+            await ensureMessagePersisted(messageId: messageId, content: content)
+        case .streamingUpdate(let messageId, let content):
+            await saveStreamingUpdate(messageId: messageId, content: content)
+        }
+    }
+    
+    private func ensureMessagePersisted(messageId: String, content: String) async {
+        guard let currentChatId = self.currentChatId else { return }
+        
+        do {
+            try await self.coreDataManager.updateMessage(
+                with: messageId,
+                chatId: currentChatId,
+                content: content,
+                date: Date.now,
+                isStreaming: false
+            )
+            
+            // Remove from pending saves once confirmed
+            pendingFinalSaves.removeValue(forKey: messageId)
+            activeStreamingMessages.remove(messageId)
+            
+            print("✅ Final message save confirmed for ID: \(messageId)")
+        } catch {
+            print("❌ Failed to ensure message persistence for ID: \(messageId), error: \(error)")
+        }
+    }
+    
+    private func saveStreamingUpdate(messageId: String, content: String) async {
+        guard let currentChatId = self.currentChatId else { return }
+        
+        do {
+            try await self.coreDataManager.updateMessage(
+                with: messageId,
+                chatId: currentChatId,
+                content: content,
+                date: Date.now,
+                isStreaming: true
+            )
+            print("✅ Streaming update saved for ID: \(messageId)")
+        } catch {
+            print("❌ Failed to save streaming update for ID: \(messageId), error: \(error)")
+        }
+    }
+    
+    // MARK: - App Lifecycle Handling
+    
+    private func setupAppLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task {
+                await self?.handleAppWillResignActive()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task {
+                await self?.handleAppDidEnterBackground()
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task {
+                await self?.handleAppWillTerminate()
+            }
+        }
+    }
+    
+    private func handleAppWillResignActive() async {
+        print("🔄 App will resign active - ensuring message persistence")
+        await performFinalSaves()
+    }
+    
+    private func handleAppDidEnterBackground() async {
+        print("🔄 App entered background - starting background task")
+        startBackgroundTask()
+        await performFinalSaves()
+    }
+    
+    private func handleAppWillTerminate() async {
+        print("🔄 App will terminate - performing emergency saves")
+        await performFinalSaves()
+    }
+    
+    // MARK: - Background Task Management
+    
+    private func startBackgroundTask() {
+        guard backgroundTaskId == .invalid else { return }
+        
+        Task { @MainActor in
+            self.backgroundTaskId = UIApplication.shared.beginBackgroundTask { [weak self] in
+                guard let self = self else { return }
+                Task { @MainActor in
+                    await self.endBackgroundTaskAsync()
+                }
+            }
+        }
+    }
+    
+    @MainActor
+    private func endBackgroundTaskAsync() async {
+        guard backgroundTaskId != .invalid else { return }
+        
+        UIApplication.shared.endBackgroundTask(backgroundTaskId)
+        backgroundTaskId = .invalid
+    }
+    
+    // MARK: - Final Save Guarantee
+    
+    private func performFinalSaves() async {
+        print("🔄 Performing final saves for \(pendingFinalSaves.count) messages")
+        
+        let saves = pendingFinalSaves
+        pendingFinalSaves.removeAll()
+        
+        await withTaskGroup(of: Void.self) { group in
+            for (messageId, content) in saves {
+                group.addTask {
+                    await self.ensureMessagePersisted(messageId: messageId, content: content)
+                }
+            }
+        }
+        
+        // Also save any currently active streaming messages
+        let activeMessages = activeStreamingMessages
+        activeStreamingMessages.removeAll()
+        
+        await withTaskGroup(of: Void.self) { group in
+            for messageId in activeMessages {
+                if let messageIndex = self.messages.firstIndex(where: { $0.id == messageId }) {
+                    let content = self.messages[messageIndex].content
+                    group.addTask {
+                        await self.ensureMessagePersisted(messageId: messageId, content: content)
+                    }
+                }
+            }
+        }
+        
+        print("✅ Final saves completed")
+    }
+    
+    // MARK: - Chat Deletion Observer
+    
+    private func setupChatDeletionObserver() {
+        coreDataManager.$chats
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] chats in
+                guard let self = self, let currentChatId = self.currentChatId else { return }
+                
+                // Check if the currently selected chat still exists
+                let chatExists = chats.contains { $0.id == currentChatId }
+                
+                if !chatExists {
+                    print("🗑️ Currently selected chat \(currentChatId) was deleted, clearing chat view")
+                    self.clearCurrentChat()
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func clearCurrentChat() {
+        self.currentChatId = nil
+        self.messages = []
+        self.onMessagesUpdated?(nil)
+    }
+}
+
+// MARK: - Persistence Event Types
+
+private enum PersistenceEvent {
+    case messageCompleted(messageId: String, content: String)
+    case streamingUpdate(messageId: String, content: String)
 }
