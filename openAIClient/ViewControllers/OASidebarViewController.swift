@@ -6,7 +6,6 @@
 //
 
 import UIKit
-import SwiftOpenAI
 import Combine
 
 class OASidebarViewController: UIViewController {

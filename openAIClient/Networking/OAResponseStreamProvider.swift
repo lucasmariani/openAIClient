@@ -8,40 +8,21 @@
 import SwiftOpenAI
 import SwiftUI
 
-// MARK: - Custom Error Types
-
-enum APIError: LocalizedError {
-    case requestFailed(description: String)
-    case invalidResponse
-    case streamingInterrupted
-    
-    var errorDescription: String? {
-        switch self {
-        case .requestFailed(let description):
-            return "API request failed: \(description)"
-        case .invalidResponse:
-            return "Invalid response from API"
-        case .streamingInterrupted:
-            return "Streaming was interrupted"
-        }
-    }
-}
-
 @MainActor
 @Observable
-public class ResponseStreamProvider {
+public class OAResponseStreamProvider {
 
-    public let model: Model
+    public let model: OAModel
     // MARK: - Initialization
 
-    public init(service: OpenAIService, model: Model) {
+    public init(service: OAOpenAIService, model: OAModel) {
         self.service = service
         self.model = model
     }
 
     // MARK: - Message Model
 
-    public struct ResponseMessage: Identifiable {
+    public struct OAResponseMessage: Identifiable {
         public let id = UUID()
         public let role: MessageRole
         public var content: String
@@ -55,9 +36,9 @@ public class ResponseStreamProvider {
         }
     }
 
-    public var messages: [ResponseMessage] = []
+    public var messages: [OAResponseMessage] = []
     public var isStreaming = false
-    public var currentStreamingMessage: ResponseMessage?
+    public var currentStreamingMessage: OAResponseMessage?
     public var error: String?
 
     // MARK: - Public Methods
@@ -67,7 +48,7 @@ public class ResponseStreamProvider {
         streamTask?.cancel()
 
         // Add user message
-        let userMessage = ResponseMessage(
+        let userMessage = OAResponseMessage(
             role: .user,
             content: text,
             timestamp: Date(),
@@ -103,7 +84,7 @@ public class ResponseStreamProvider {
         error = nil
     }
 
-    private let service: OpenAIService
+    private let service: OAOpenAIService
     private var previousResponseId: String?
     private var streamTask: Task<Void, Never>?
 
@@ -114,7 +95,7 @@ public class ResponseStreamProvider {
         error = nil
 
         // Create streaming message placeholder
-        let streamingMessage = ResponseMessage(
+        let streamingMessage = OAResponseMessage(
             role: .assistant,
             content: "",
             timestamp: Date(),
@@ -150,7 +131,7 @@ public class ResponseStreamProvider {
             // Add current user message
             inputArray.append(.message(InputMessage(role: "user", content: .text(userInput))))
 
-            let parameters = ModelResponseParameter(
+            let parameters = OAModelResponseParameter(
                 input: .array(inputArray),
                 model: self.model,
                 instructions: "You are a helpful assistant. Use the conversation history to provide contextual responses.",

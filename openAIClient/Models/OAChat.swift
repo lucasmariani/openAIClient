@@ -6,14 +6,13 @@
 //
 
 import Foundation
-import SwiftOpenAI
 
 struct OAChat: Codable, Sendable, Hashable {
     let id: String
     let date: Date
     let title: String
     let provisionaryInputText: String?
-    let selectedModel: SwiftOpenAI.Model
+    let selectedModel: OAModel
     let messages: Set<OAChatMessage>
 }
 
@@ -26,7 +25,7 @@ extension OAChat {
         self.date = date
         self.title = chat.title ?? "No title"
         self.provisionaryInputText = chat.provisionaryInputText
-        self.selectedModel = SwiftOpenAI.Model(value: chat.selectedModel ?? "gpt-4.1-nano")
+        self.selectedModel = OAModel(value: chat.selectedModel ?? "gpt-4.1-nano")
         self.messages = []
     }
 }

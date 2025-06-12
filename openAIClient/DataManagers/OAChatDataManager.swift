@@ -7,13 +7,12 @@
 
 
 import Foundation
-import SwiftOpenAI
 import Combine
 import SwiftUI
 
 @MainActor
 final class OAChatDataManager {
-    private var responseProvider: ResponseStreamProvider? = nil
+    private var responseProvider: OAResponseStreamProvider? = nil
 
 //    private let conversation: Conversation?
     private var observationTask: Task<Void, Never>?
@@ -26,7 +25,11 @@ final class OAChatDataManager {
     var onMessagesUpdated: ((_ reconfigureItemID: String?) -> Void)?
 
     @Published
-    var selectedModel: SwiftOpenAI.Model
+    var selectedModel: OAModel
+    
+    // Track last save times for periodic streaming saves
+    private var lastStreamingSaveTimes: [String: Date] = [:]
+    private let streamingSaveInterval: TimeInterval = 2.5 // Save every 2.5 seconds during streaming
 
     init(coreDataManager: OACoreDataManager) {
         self.coreDataManager = coreDataManager
@@ -36,10 +39,10 @@ final class OAChatDataManager {
             return
         }
         let configuration = URLSessionConfiguration.default
-        let service = OpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
+        let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
 
         self.selectedModel = .gpt41nano
-        self.responseProvider = ResponseStreamProvider(service: service, model: self.selectedModel)
+        self.responseProvider = OAResponseStreamProvider(service: service, model: self.selectedModel)
      }
 
     deinit {
@@ -54,7 +57,7 @@ final class OAChatDataManager {
         }
     }
 
-    func updateModel(_ model: SwiftOpenAI.Model) async {
+    func updateModel(_ model: OAModel) async {
         try? await self.coreDataManager.updateSelectedModelFor(self.currentChatId, model: model)
         self.selectedModel = model
 //        conversation?.updateConfig { config in
@@ -123,10 +126,14 @@ final class OAChatDataManager {
     func setCurrentChat(_ chatId: String?) {
         guard let chatId else {
             self.currentChatId = nil
+            // Clear streaming save tracking when changing chats
+            self.lastStreamingSaveTimes.removeAll()
             return
         }
 
         self.currentChatId = chatId
+        // Clear streaming save tracking when changing chats
+        self.lastStreamingSaveTimes.removeAll()
         self.setupConversationObserver()
     }
 
@@ -204,7 +211,7 @@ final class OAChatDataManager {
         }
     }
 
-    private func createNewAssistant(message: ResponseStreamProvider.ResponseMessage, currentChatId: String) {
+    private func createNewAssistant(message: OAResponseStreamProvider.OAResponseMessage, currentChatId: String) {
         print("Creating new assistant message with ID \(message.id)")
         
         // Avoid creating duplicate messages
@@ -221,7 +228,15 @@ final class OAChatDataManager {
         )
         self.messages.append(assistantMessage)
 
-        // Don't save to Core Data yet - wait until streaming completes
+        // Save initial message to Core Data immediately when streaming starts
+        Task(priority: .background) {
+            do {
+                try await self.coreDataManager.addMessage(assistantMessage, toChatID: currentChatId, isStreaming: true)
+                print("✅ Successfully saved initial streaming message \(message.id) to Core Data")
+            } catch {
+                print("❌ Failed to save initial streaming message \(message.id) to Core Data: \(error)")
+            }
+        }
         
         // Notify UI for update
         self.onMessagesUpdated?(nil)
@@ -241,8 +256,25 @@ final class OAChatDataManager {
 
         print("Message with ID \(messageId) updated locally. Content length: \(content.count), isStreaming: \(isStreaming)")
 
-        // Persist to Core Data only when streaming is complete
+        // Determine if we should save to Core Data
+        let shouldSave: Bool
         if !isStreaming {
+            // Always save when streaming is complete
+            shouldSave = true
+            // Remove from periodic save tracking
+            lastStreamingSaveTimes.removeValue(forKey: messageId)
+        } else {
+            // Check if enough time has passed for periodic save during streaming
+            let lastSaveTime = lastStreamingSaveTimes[messageId] ?? Date.distantPast
+            shouldSave = date.timeIntervalSince(lastSaveTime) >= streamingSaveInterval
+        }
+
+        if shouldSave {
+            // Update last save time for this message
+            if isStreaming {
+                lastStreamingSaveTimes[messageId] = date
+            }
+            
             Task(priority: .background) {
                 do {
                     // Try to update first, if that fails, create new message
@@ -250,9 +282,10 @@ final class OAChatDataManager {
                         with: messageId,
                         chatId: chatId,
                         content: content,
-                        date: date
+                        date: date,
+                        isStreaming: isStreaming
                     )
-                    print("Successfully updated message \(messageId) in Core Data")
+                    print("✅ Successfully updated message \(messageId) in Core Data (streaming: \(isStreaming))")
                 } catch {
                     // If update fails (message doesn't exist), create it
                     do {
@@ -262,10 +295,10 @@ final class OAChatDataManager {
                             content: content,
                             date: date
                         )
-                        try await self.coreDataManager.addMessage(assistantMessage, toChatID: chatId)
-                        print("Successfully created message \(messageId) in Core Data")
+                        try await self.coreDataManager.addMessage(assistantMessage, toChatID: chatId, isStreaming: isStreaming)
+                        print("✅ Successfully created message \(messageId) in Core Data (streaming: \(isStreaming))")
                     } catch {
-                        print("Failed to create message \(messageId) in Core Data: \(error)")
+                        print("❌ Failed to create message \(messageId) in Core Data: \(error)")
                     }
                 }
             }
