@@ -7,8 +7,13 @@
 
 import Foundation
 @preconcurrency import Combine
-import SwiftUI
-import UIKit
+
+enum ChatViewState {
+    case empty
+    case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil)
+    case loading(chatId: String)
+    case error(String)
+}
 
 @MainActor
 final class OAChatDataManager {
@@ -18,25 +23,17 @@ final class OAChatDataManager {
     private let repository: ChatRepository
     private var currentChatId: String? = nil
     var messages: [OAChatMessage] = []
-    var onMessagesUpdated: ((_ reconfigureItemID: String?) -> Void)?
     
     @Published var selectedModel: OAModel = .gpt41nano
+    @Published var viewState: ChatViewState = .empty
     
     private var cancellables = Set<AnyCancellable>()
     private var streamingTask: Task<Void, Never>?
 
     // MARK: - Initialization
     
-    init(coreDataManager: OACoreDataManager) {
-        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
-            fatalError("Error retrieving API_KEY")
-        }
-        
-        let configuration = URLSessionConfiguration.default
-        let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
-        let streamProvider = OAResponseStreamProvider(service: service, model: .gpt41nano)
-
-        self.repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
+    init(repository: ChatRepository) {
+        self.repository = repository
         setupEventHandling()
     }
     
@@ -61,19 +58,19 @@ final class OAChatDataManager {
         case .messageStarted(let chatId, let message):
             if chatId == currentChatId {
                 messages.append(message)
-                onMessagesUpdated?(nil)
+                updateViewState()
             }
             
         case .messageUpdated(let chatId, let message):
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                onMessagesUpdated?(message.id)
+                updateViewState(reconfiguringMessageID: message.id)
             }
             
         case .messageCompleted(let chatId, let message):
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                onMessagesUpdated?(message.id)
+                updateViewState(reconfiguringMessageID: message.id)
             }
             
         case .streamingError(let chatId, let error):
@@ -101,7 +98,15 @@ final class OAChatDataManager {
     private func clearCurrentChat() {
         currentChatId = nil
         messages = []
-        onMessagesUpdated?(nil)
+        viewState = .empty
+    }
+    
+    private func updateViewState(reconfiguringMessageID: String? = nil) {
+        if let chatId = currentChatId {
+            viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: reconfiguringMessageID)
+        } else {
+            viewState = .empty
+        }
     }
 
     // MARK: - Public Methods
@@ -150,7 +155,7 @@ final class OAChatDataManager {
             messages = try await repository.getMessages(for: id)
             selectedModel = chat.selectedModel
             
-            onMessagesUpdated?(nil)
+            updateViewState()
             return chat
             
         } catch {
@@ -160,24 +165,13 @@ final class OAChatDataManager {
         }
     }
 
-    func getChatTitle(for chatId: String) -> String? {
-        Task {
-            do {
-                let chat = try await repository.getChat(with: chatId)
-                return chat?.title
-            } catch {
-                return nil
-            }
-        }
-        return nil // Temporary - this should be async
-    }
 
     func sendMessage(_ chatMessage: OAChatMessage) {
         guard let currentChatId else { return }
 
         // Optimistically add user message to UI
         messages.append(chatMessage)
-        onMessagesUpdated?(nil)
+        updateViewState()
 
         Task {
             do {
@@ -187,7 +181,7 @@ final class OAChatDataManager {
                 // Start streaming assistant response
                 streamingTask?.cancel()
                 streamingTask = Task {
-                    for await assistantMessage in repository.streamMessage(
+                    for await _ in repository.streamMessage(
                         content: chatMessage.content,
                         chatId: currentChatId,
                         model: selectedModel

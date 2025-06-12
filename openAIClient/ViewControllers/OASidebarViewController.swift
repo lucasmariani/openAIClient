@@ -11,7 +11,7 @@ import Combine
 class OASidebarViewController: UIViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
-    private let coreDataManager: OACoreDataManager
+    private let repository: ChatRepository
     private var cancellables = Set<AnyCancellable>()
 
     enum Section: Int, CaseIterable {
@@ -29,8 +29,8 @@ class OASidebarViewController: UIViewController {
         case chat(String) // Chat ID
     }
 
-    init(coreDataManager: OACoreDataManager) {
-        self.coreDataManager = coreDataManager
+    init(repository: ChatRepository) {
+        self.repository = repository
         super.init(nibName: nil, bundle: nil)
         self.title = "Chats"
     }
@@ -78,7 +78,7 @@ class OASidebarViewController: UIViewController {
             let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                 Task {
                     do {
-                        try await self.coreDataManager.deleteChat(with: chatID)
+                        try await self.repository.deleteChat(with: chatID)
                         completion(true)
                     } catch {
                         await MainActor.run {
@@ -105,17 +105,20 @@ class OASidebarViewController: UIViewController {
     private func setupDataSource() {
         // Register cell types
         let chatCellRegistration = UICollectionView.CellRegistration<UICollectionViewListCell, String> { [weak self] cell, indexPath, chatID in
-            guard let self = self,
-                  let chat = self.coreDataManager.chats.first(where: { $0.id == chatID }) else { return }
-
-            var content = cell.defaultContentConfiguration()
-            content.text = chat.title
-            content.secondaryText = "Tap to open"
-            content.image = UIImage(systemName: "message")
-            content.imageProperties.tintColor = .tertiaryLabel
-
-            cell.contentConfiguration = content
-            cell.accessories = []
+            Task {
+                guard let self = self,
+                      let chat = try? await self.repository.getChat(with: chatID) else { return }
+                
+                await MainActor.run {
+                    var content = cell.defaultContentConfiguration()
+                    content.text = chat.title
+                    content.secondaryText = "Tap to open"
+                    content.image = UIImage(systemName: "message")
+                    content.imageProperties.tintColor = .tertiaryLabel
+                    cell.contentConfiguration = content
+                    cell.accessories = []
+                }
+            }
         }
 
         // Header registration
@@ -141,13 +144,12 @@ class OASidebarViewController: UIViewController {
     }
 
     private func setupBindings() {
-        coreDataManager.$chats
+        repository.chatsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] chats in
                 self?.updateSnapshot(with: chats.map { $0.id })
             }
             .store(in: &cancellables)
-
     }
 
     private func updateSnapshot(with chatIDs: [String]) {
@@ -162,15 +164,24 @@ class OASidebarViewController: UIViewController {
     }
 
     private func selectLatestChat() {
-        if self.coreDataManager.chats.isEmpty { return }
-        let indexPath = IndexPath(item: 0, section: 0)
-        self.collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
-        self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
+        Task {
+            do {
+                let chats = try await repository.getChats()
+                guard !chats.isEmpty else { return }
+                await MainActor.run {
+                    let indexPath = IndexPath(item: 0, section: 0)
+                    self.collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+                    self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
+                }
+            } catch {
+                print("Failed to get chats for selection: \(error)")
+            }
+        }
     }
 
     @objc private func addNewChat() async {
         do {
-            try await coreDataManager.newChat()
+            _ = try await repository.createNewChat()
         } catch {
             await MainActor.run {
                 showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
@@ -214,7 +225,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
             let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
                 Task {
                     do {
-                        try await self?.coreDataManager.deleteChat(with: chatID)
+                        try await self?.repository.deleteChat(with: chatID)
                     } catch {
                         await MainActor.run {
                             self?.showErrorAlert(message: "Failed to delete chat: \(error.localizedDescription)")

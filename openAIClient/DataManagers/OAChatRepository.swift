@@ -36,7 +36,6 @@ protocol ChatRepository {
     // Message management
     func getMessages(for chatId: String) async throws -> [OAChatMessage]
     func saveMessage(_ message: OAChatMessage, toChatId chatId: String) async throws
-    func updateMessage(_ message: OAChatMessage, chatId: String) async throws
     
     // Streaming
     func streamMessage(content: String, chatId: String, model: OAModel) -> AsyncStream<OAChatMessage>
@@ -110,22 +109,13 @@ final class OAChatRepositoryImpl: ChatRepository {
     // MARK: - Message Management
     
     func getMessages(for chatId: String) async throws -> [OAChatMessage] {
-        return try await coreDataManager.refreshMessages(for: chatId)
+        return try await coreDataManager.fetchMessages(for: chatId)
     }
     
     func saveMessage(_ message: OAChatMessage, toChatId chatId: String) async throws {
         try await coreDataManager.addMessage(message, toChatID: chatId)
     }
     
-    func updateMessage(_ message: OAChatMessage, chatId: String) async throws {
-        try await coreDataManager.updateMessage(
-            with: message.id,
-            chatId: chatId,
-            content: message.content,
-            date: message.date,
-            isStreaming: false
-        )
-    }
     
     // MARK: - Streaming
     

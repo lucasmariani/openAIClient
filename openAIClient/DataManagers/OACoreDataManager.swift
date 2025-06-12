@@ -7,7 +7,6 @@
 
 import CoreData
 import Combine
-import UIKit
 
 final class OACoreDataManager: @unchecked Sendable {
 
@@ -44,7 +43,6 @@ final class OACoreDataManager: @unchecked Sendable {
         }
         
         await MainActor.run {
-            fetchedChats.forEach {print("chat ID: \($0.id)")}
             self.chats = fetchedChats
         }
     }
@@ -86,8 +84,7 @@ final class OACoreDataManager: @unchecked Sendable {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
-                print("❌ Chat not found when fetching messages for ID: \(chatID)")
-                throw OACoreDataError.chatNotFound
+                    throw OACoreDataError.chatNotFound
             }
 
             // Use a proper fetch request with sort descriptors instead of relationship set
@@ -99,21 +96,12 @@ final class OACoreDataManager: @unchecked Sendable {
             ]
 
             let messageMOs = try self.backgroundContext.fetch(messageFetchRequest)
-            print("🔍 Found \(messageMOs.count) message MOs for chat: \(chatID) (sorted by date)")
-
-            messageMOs.forEach { message in
-                print("fetchMessages (coreDataManager) | Date: \(message.date?.timeIntervalSince1970). Role: \(message.role)")
-            }
 
             let sortedMessages = messageMOs.compactMap {
                 let message = OAChatMessage(message: $0)
-                if message == nil {
-                    print("❌ Failed to create OAChatMessage from MO: Role=\(($0.role) ?? "nil"), ID=\($0.id ?? "nil")")
-                }
                 return message
             }
             
-            print("✅ Successfully converted \(sortedMessages.count) messages for chat: \(chatID)")
             return sortedMessages
         }
     }
@@ -215,27 +203,12 @@ final class OACoreDataManager: @unchecked Sendable {
     
     @MainActor
     private func handleRemoteChanges() async {
-//        print("🔄 Handling remote CloudKit changes")
         do {
             try await self.fetchPersistedChats()
-//            print("✅ Successfully refreshed chats from CloudKit")
         } catch {
             print("❌ Failed to refresh chats after remote changes: \(error)")
         }
     }
     
-    func checkForUpdates() async {
-        print("🔍 Checking for CloudKit updates")
-        do {
-            try await self.fetchPersistedChats()
-            print("✅ Update check completed")
-        } catch {
-            print("❌ Failed to check for updates: \(error)")
-        }
-    }
     
-    func refreshMessages(for chatID: String) async throws -> [OAChatMessage] {
-        print("🔄 Refreshing messages for chat: \(chatID)")
-        return try await self.fetchMessages(for: chatID)
-    }
 }

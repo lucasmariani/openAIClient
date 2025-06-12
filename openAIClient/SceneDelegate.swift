@@ -13,6 +13,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var chatDataManager: OAChatDataManager?
     private var coreDataManager: OACoreDataManager?
+    private var repository: ChatRepository?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
@@ -28,13 +29,24 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         splitViewController.displayModeButtonVisibility = .automatic
 
         let coreDataManager = OACoreDataManager()
-        let chatDataManager = OAChatDataManager(coreDataManager: coreDataManager)
+        
+        // Create single repository instance shared by both components
+        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
+            fatalError("Error retrieving API_KEY")
+        }
+        let configuration = URLSessionConfiguration.default
+        let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
+        let streamProvider = OAResponseStreamProvider(service: service, model: .gpt41nano)
+        let repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
+        
+        let chatDataManager = OAChatDataManager(repository: repository)
         
         // Store references for lifecycle management
         self.coreDataManager = coreDataManager
         self.chatDataManager = chatDataManager
+        self.repository = repository
 
-        let sidebar = OASidebarViewController(coreDataManager: coreDataManager)
+        let sidebar = OASidebarViewController(repository: repository)
         let sidebarNav = UINavigationController(rootViewController: sidebar)
 
         let chatVC = OAChatViewController(chatDataManager: chatDataManager)
@@ -43,18 +55,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         splitViewController.setViewController(sidebarNav, for: .primary)
         splitViewController.setViewController(detailNav, for: .secondary)
 
-//        splitViewController.delegate = self
 
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = splitViewController
         window?.makeKeyAndVisible()
     }
 
-//    extension SceneDelegate: UISplitViewControllerDelegate {
-//        func splitViewController(_ svc: UISplitViewController, topColumnForCollapsingToProposedTopColumn proposedTopColumn: UISplitViewController.Column) -> UISplitViewController.Column {
-//            return .primary
-//        }
-//    }
 
     func sceneDidDisconnect(_ scene: UIScene) {
         // Called as the scene is being released by the system.
@@ -77,7 +83,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Force save Core Data context to ensure no data loss
         OACoreDataStack.shared.saveContext()
-        print("✅ Core Data context saved on resigning active")
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
@@ -86,7 +91,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Check for CloudKit updates when returning to foreground
         Task {
-            await coreDataManager?.checkForUpdates()
+            try? await coreDataManager?.fetchPersistedChats()
         }
     }
 
@@ -97,7 +102,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Force save Core Data context
         OACoreDataStack.shared.saveContext()
-        print("✅ Core Data context saved on entering background")
     }
 }
 

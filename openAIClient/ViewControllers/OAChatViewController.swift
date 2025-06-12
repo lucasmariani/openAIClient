@@ -35,9 +35,6 @@ class OAChatViewController: UIViewController {
     init(chatDataManager: OAChatDataManager) {
         self.chatDataManager = chatDataManager
         super.init(nibName: nil, bundle: nil)
-        self.chatDataManager.onMessagesUpdated = { [weak self] reconfiguringItemID in
-            self?.updateSnapshot(reconfiguringItemID: reconfiguringItemID)
-        }
         self.currentlySelectedModel = self.chatDataManager.selectedModel
     }
 
@@ -53,15 +50,7 @@ class OAChatViewController: UIViewController {
         self.setupNavBar()
         self.chatDataManager.loadLatestChat()
 
-        self.chatDataManager.$selectedModel
-            .sink { [weak self] value in
-                guard let self = self, isMacCatalyst else { return }
-                if let button = self.navigationItem.rightBarButtonItem {
-                    self.currentlySelectedModel = value
-                    button.menu = self.makeModelSelectionMenu()
-                }
-            }
-            .store(in: &cancellables)
+        setupBindings()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -98,18 +87,9 @@ class OAChatViewController: UIViewController {
         // Input Container
 
 
-//        self.view.backgroundColor = .red
-//        self.tableView.backgroundColor = .blue
-//        inputContainerView.backgroundColor = .yellow
-
-//        inputContainerView.backgroundColor = .systemGray6
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
 
-//        let effectView = UIVisualEffectView()
-//        let glassEffect = UIGlassEffect()
-//        effectView.effect = glassEffect
-//        inputContainerView.addSubview(effectView)
 
 
         // Input Field
@@ -149,8 +129,6 @@ class OAChatViewController: UIViewController {
             inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
 
-//            effectView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
-//            effectView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
 
             // Input Field
             inputField.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
@@ -177,15 +155,44 @@ class OAChatViewController: UIViewController {
             tableView: self.tableView
         ) { [weak self] tableView, indexPath, messageID in
             guard let self = self else { return UITableViewCell() }
+            
+            // Handle placeholder cases
+            if messageID == "no-chat-placeholder" {
+                let cell = UITableViewCell()
+                cell.textLabel?.text = "Select a chat to start messaging"
+                cell.textLabel?.textColor = .secondaryLabel
+                cell.textLabel?.textAlignment = .center
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            if messageID == "loading-placeholder" {
+                let cell = UITableViewCell()
+                cell.textLabel?.text = "Loading chat..."
+                cell.textLabel?.textColor = .secondaryLabel
+                cell.textLabel?.textAlignment = .center
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            if messageID == "error-placeholder" {
+                let cell = UITableViewCell()
+                cell.textLabel?.text = "Error loading chat"
+                cell.textLabel?.textColor = .systemRed
+                cell.textLabel?.textAlignment = .center
+                cell.selectionStyle = .none
+                return cell
+            }
+            
+            // Handle normal message case
             guard let cell = tableView.dequeueReusableCell(withIdentifier: "chatMessageCell", for: indexPath) as? OAChatMessageCell else {
                 return UITableViewCell()
             }
             
-            // Find the message efficiently
-            if let message = self.chatDataManager.messages.first(where: { $0.id == messageID }) {
+            if case .chat(_, let messages, _) = self.chatDataManager.viewState,
+               let message = messages.first(where: { $0.id == messageID }) {
                 cell.configure(with: message.content, role: message.role)
             } else {
-                // Handle case where message might not be found (shouldn't happen, but safety first)
                 cell.configure(with: "Message not found", role: .system)
             }
             return cell
@@ -193,33 +200,91 @@ class OAChatViewController: UIViewController {
         self.tableView.dataSource = self.dataSource
     }
 
-    private func updateSnapshot(reconfiguringItemID: String? = nil, animatingDifferences: Bool = true) {
-        let currentMessages = self.chatDataManager.messages
-        let messageIDs = currentMessages.map { $0.id }
-
+    private func setupBindings() {
+        chatDataManager.$viewState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                self?.updateUI(for: state)
+            }
+            .store(in: &cancellables)
+        
+        chatDataManager.$selectedModel
+            .sink { [weak self] value in
+                guard let self = self, isMacCatalyst else { return }
+                if let button = self.navigationItem.rightBarButtonItem {
+                    self.currentlySelectedModel = value
+                    button.menu = self.makeModelSelectionMenu()
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func updateUI(for state: ChatViewState) {
+        switch state {
+        case .empty:
+            updateSnapshot(for: .empty)
+            inputField.isEnabled = false
+            inputField.text = ""
+            inputField.placeholder = "Select a chat to start messaging"
+            
+        case .chat(let id, let messages, let reconfiguringMessageID):
+            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
+            inputField.isEnabled = true
+            inputField.placeholder = "Type a message..."
+            
+        case .loading(_):
+            inputField.isEnabled = false
+            inputField.placeholder = "Loading..."
+            
+        case .error(let message):
+            inputField.isEnabled = false
+            inputField.placeholder = "Error: \(message)"
+        }
+    }
+    
+    private func updateSnapshot(for state: ChatViewState, animatingDifferences: Bool = true) {
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0])
-        snapshot.appendItems(messageIDs)
-
-        // If a specific item ID needs reconfiguring, tell the snapshot
-        if let itemID = reconfiguringItemID, messageIDs.contains(itemID) {
-            snapshot.reconfigureItems([itemID])
+        
+        switch state {
+        case .empty:
+            snapshot.appendItems(["no-chat-placeholder"])
+            
+        case .chat(_, let messages, let reconfiguringMessageID):
+            let messageIDs = messages.map { $0.id }
+            snapshot.appendItems(messageIDs)
+            
+            // If a specific item ID needs reconfiguring, tell the snapshot
+            if let itemID = reconfiguringMessageID, messageIDs.contains(itemID) {
+                snapshot.reconfigureItems([itemID])
+            }
+            
+        case .loading:
+            snapshot.appendItems(["loading-placeholder"])
+            
+        case .error:
+            snapshot.appendItems(["error-placeholder"])
         }
-
-        // Apply snapshot with appropriate animation
-        let shouldAnimate = animatingDifferences && currentMessages.count <= 100 // Disable animation for large lists
+        
+        let shouldAnimate: Bool
+        if case .chat(_, let messages, _) = state {
+            shouldAnimate = animatingDifferences && messages.count <= 100
+        } else {
+            shouldAnimate = animatingDifferences
+        }
         
         self.dataSource.apply(snapshot, animatingDifferences: shouldAnimate) { [weak self] in
-            self?.scrollToBottomIfNeeded()
+            if case .chat(_, let messages, _) = state, !messages.isEmpty {
+                self?.scrollToBottomIfNeeded()
+            }
         }
     }
     
     private func scrollToBottomIfNeeded() {
-        let currentMessages = self.chatDataManager.messages
-        guard !currentMessages.isEmpty else { return }
+        guard case .chat(_, let messages, _) = chatDataManager.viewState, !messages.isEmpty else { return }
         
         DispatchQueue.main.async {
-            let lastIndexPath = IndexPath(item: currentMessages.count - 1, section: 0)
+            let lastIndexPath = IndexPath(item: messages.count - 1, section: 0)
             if self.tableView.numberOfSections > 0 && 
                self.tableView.numberOfRows(inSection: 0) > lastIndexPath.row {
                 self.tableView.scrollToRow(at: lastIndexPath, at: .bottom, animated: true)
