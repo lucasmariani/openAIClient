@@ -51,9 +51,6 @@ class OASidebarViewController: UIViewController {
         setupNavigationBar()
         setupDataSource()
         setupBindings()
-        
-        // Ensure toolbar is hidden initially
-//        navigationController?.setToolbarHidden(true, animated: false)
     }
 
     private func setupNavigationBar() {
@@ -255,15 +252,19 @@ class OASidebarViewController: UIViewController {
     // MARK: - Selection Mode
 
     func restoreButtonsConfiguration() {
-        navigationController?.setToolbarHidden(false, animated: true)
-        navigationItem.rightBarButtonItems = [addButton]
-        toolbarItems = [selectButton, flexibleSpace]
+        UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
+            self.navigationItem.rightBarButtonItems = [self.addButton]
+            self.toolbarItems = [self.flexibleSpace, self.selectButton]
+            self.navigationController?.setToolbarHidden(false, animated: true)
+        })
     }
 
     func setButtonsToEditMode() {
-        navigationController?.setToolbarHidden(false, animated: true)
-        navigationItem.rightBarButtonItems = []
-        toolbarItems = [cancelButton, deleteButton, selectAllButton, flexibleSpace]
+        UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
+            self.navigationItem.rightBarButtonItems = []
+            self.toolbarItems = [self.flexibleSpace, self.selectAllButton, self.deleteButton, self.cancelButton]
+            self.navigationController?.setToolbarHidden(false, animated: true)
+        })
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {
