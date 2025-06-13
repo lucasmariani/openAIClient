@@ -8,14 +8,6 @@
 import UIKit
 import Combine
 
-var isMacCatalyst: Bool {
-    #if targetEnvironment(macCatalyst)
-    return true
-    #else
-    return false
-    #endif
-}
-
 class OAChatViewController: UIViewController {
 
     private enum ChatStateIdentifier: String {
@@ -36,7 +28,6 @@ class OAChatViewController: UIViewController {
         static let loadedPlaceholderText = "Type a message..."
 
         static let cellId = "chatMessageCell"
-
     }
 
     private let tableView = UITableView()
@@ -96,7 +87,7 @@ class OAChatViewController: UIViewController {
         )
         navigationItem.rightBarButtonItem = modelButton
 
-        if isMacCatalyst {
+        if OAPlatform.isMacCatalyst {
             modelButton.menu = makeModelSelectionMenu()
         } else {
             modelButton.target = self
@@ -228,7 +219,7 @@ class OAChatViewController: UIViewController {
         
         chatDataManager.$selectedModel
             .sink { [weak self] value in
-                guard let self = self, isMacCatalyst else { return }
+                guard let self = self, OAPlatform.isMacCatalyst else { return }
                 if let button = self.navigationItem.rightBarButtonItem {
                     self.currentlySelectedModel = value
                     button.menu = self.makeModelSelectionMenu()
@@ -342,7 +333,7 @@ class OAChatViewController: UIViewController {
     }
 
     @objc private func didTapModelButton() {
-        if !isMacCatalyst {
+        if !OAPlatform.isMacCatalyst {
             self.presentModelSelectionActionSheet()
         }
     }
