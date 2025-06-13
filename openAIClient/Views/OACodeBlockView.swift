@@ -95,15 +95,20 @@ class OACodeBlockView: UIView {
         self.invalidateIntrinsicContentSize()
     }
 
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-
-        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
-            setupHighlightr()
-            updateBackgroundForTheme()
-            updateBorderForTheme()
-            // Re-highlight the current content with new theme
-            configureTextViewContent(with: currentCode, language: currentLanguage)
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil {
+            registerForTraitChanges([UITraitUserInterfaceStyle.self]) { [weak self] (view: OACodeBlockView, previousTraitCollection: UITraitCollection) in
+                self?.handleUserInterfaceStyleChange()
+            }
         }
+    }
+    
+    private func handleUserInterfaceStyleChange() {
+        setupHighlightr()
+        updateBackgroundForTheme()
+        updateBorderForTheme()
+        // Re-highlight the current content with new theme
+        configureTextViewContent(with: currentCode, language: currentLanguage)
     }
 }
