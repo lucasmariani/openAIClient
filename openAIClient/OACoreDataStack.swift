@@ -36,17 +36,12 @@ final class OACoreDataStack: Sendable {
             print("Loaded store: \(storeDescription)")
         }
 
-//        Task {
-//            await resetCloudKitData()
-//        }
-
         // Set up remote change notifications
         NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,
             object: container.persistentStoreCoordinator,
             queue: .main
         ) { _ in
-//            print("🔄 Remote changes detected from CloudKit")
             NotificationCenter.default.post(name: .cloudKitDataChanged, object: nil)
         }
     }
@@ -60,25 +55,6 @@ final class OACoreDataStack: Sendable {
     func newBackgroundContext() -> NSManagedObjectContext {
         container.newBackgroundContext()
     }
-
-    func resetCloudKitData() async {
-
-        guard let cloudKitStore = container.persistentStoreCoordinator.persistentStores.first(where: { store in
-            return store.type == NSSQLiteStoreType &&
-            store.options?[NSPersistentHistoryTrackingKey] as? Bool == true
-        }) else {
-            print("CloudKit store not found")
-            return
-        }
-
-
-        do {
-            try await container.purgeObjectsAndRecordsInZone(with: CKRecordZone.default().zoneID, in: cloudKitStore)
-        } catch {
-            print("Failed to purge CloudKit data: \(error)")
-        }
-    }
-
 
     func saveContext() {
         let context = mainContext

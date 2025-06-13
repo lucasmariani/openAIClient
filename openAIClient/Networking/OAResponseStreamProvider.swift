@@ -174,7 +174,7 @@ public class OAResponseStreamProvider {
                 guard !Task.isCancelled else { break }
 
                 switch event {
-                case .responseCreated(let event):
+                case .responseCreated:
                     break
                     
                 case .outputTextDelta(let delta):

@@ -159,7 +159,6 @@ class OASidebarViewController: UIViewController {
         // Add existing chats
         let chatItems = chatIDs.map { Item.chat($0) }
 
-        chatIDs.forEach { print("ID: \($0)")}
         print("Chats in CD count: \(chatIDs.count)")
 
         snapshot.appendItems(chatItems, toSection: .chats)

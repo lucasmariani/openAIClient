@@ -166,12 +166,8 @@ public struct OAResponseModel: Decodable, Sendable {
             return outputText.text
           }
         }.joined()
-
-      default:
-        return nil
       }
     }
-
     return outputTextItems.isEmpty ? nil : outputTextItems.joined()
   }
 

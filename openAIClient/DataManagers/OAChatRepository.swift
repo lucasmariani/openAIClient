@@ -127,7 +127,7 @@ final class OAChatRepositoryImpl: ChatRepository {
         return AsyncStream { continuation in
             let task = Task {
                 // Start streaming with the provider
-                await streamProvider.sendMessage(content)
+                streamProvider.sendMessage(content)
 
                 // Create assistant message placeholder
                 let assistantMessage = OAChatMessage(

@@ -201,7 +201,7 @@ extension OAOpenAIService {
             printHTTPURLResponse(httpResponse)
         }
         guard httpResponse.statusCode == 200 else {
-            var errorMessage = "status code \(httpResponse.statusCode)"
+            let errorMessage = "status code \(httpResponse.statusCode)"
 //            do {
 //                let data = try await data.reduce(into: Data()) { data, byte in
 //                    data.append(byte)
