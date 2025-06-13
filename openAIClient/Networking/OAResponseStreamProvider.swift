@@ -38,6 +38,11 @@ public class OAResponseStreamProvider {
     public var messages: [OAResponseMessage] = []
 //    public var isStreaming = false
     public var error: String?
+    
+    // Completion callbacks for AsyncSequence support
+    public var onMessageUpdate: ((OAResponseMessage) -> Void)?
+    public var onStreamCompleted: ((OAResponseMessage) -> Void)?
+    public var onStreamError: ((Error) -> Void)?
 
     // MARK: - Initialization
 
@@ -213,6 +218,9 @@ public class OAResponseStreamProvider {
         } catch {
             self.error = "Streaming failed: \(error.localizedDescription)"
             
+            // Notify callback of error
+            onStreamError?(error)
+            
             // Handle error gracefully - finalize with partial content if available
             if !accumulatedText.isEmpty {
                 finalizeStreamingMessage(with: accumulatedText)
@@ -229,6 +237,9 @@ public class OAResponseStreamProvider {
         guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
         messages[index].content = content
         updateStreamingTimestampFor(index: index)
+        
+        // Notify callback of message update
+        onMessageUpdate?(messages[index])
     }
     
     private func updateStreamingTimestampFor(index: Array.Index) {
@@ -239,12 +250,13 @@ public class OAResponseStreamProvider {
         guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
         updateStreamingTimestampFor(index: index)
         messages[index].content = content.trimmingCharacters(in: .whitespacesAndNewlines)
-//        isStreaming = false
         var message = messages[index]
         message.isStreaming = false
         messages.remove(at: index)
         messages.insert(message, at: index)
 
+        // Notify callback of stream completion
+        onStreamCompleted?(message)
     }
 }
 

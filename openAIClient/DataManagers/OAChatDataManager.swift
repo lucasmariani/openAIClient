@@ -59,18 +59,12 @@ final class OAChatDataManager {
             if chatId == currentChatId {
                 messages.append(message)
                 viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
-//                updateViewState()
             }
             
         case .messageUpdated(let chatId, let message):
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-//                if let chatId = currentChatId {
-                    viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
-//                } else {
-//                    viewState = .empty
-//                }
-//                updateViewState(reconfiguringMessageID: message.id)
+                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
             }
             
         case .messageCompleted(let chatId, let message):
@@ -113,24 +107,6 @@ final class OAChatDataManager {
         messages = []
         viewState = .empty
     }
-    
-//    private func updateViewState(state: ChatViewState, reconfiguringMessageID: String? = nil) {
-//        switch state {
-//        case .empty:
-//            <#code#>
-//        case .chat(id: let id, messages: let messages, reconfiguringMessageID: let reconfiguringMessageID):
-//            <#code#>
-//        case .loading(chatId: let chatId):
-//            <#code#>
-//        case .error(_):
-//            <#code#>
-//        }
-////        if let chatId = currentChatId/*, !messages.isEmpty*/ {
-////            viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: reconfiguringMessageID)
-////        } else {
-////            viewState = .empty
-////        }
-//    }
     
     private func shouldGenerateTitle() -> Bool {
         // Generate title only if we have exactly 2 messages (1 user + 1 assistant)
@@ -231,13 +207,13 @@ final class OAChatDataManager {
                 // Start streaming assistant response
                 streamingTask?.cancel()
                 streamingTask = Task {
-                    for await _ in repository.streamMessage(
+                    for await _ in repository.streamMessageEvents(
                         content: chatMessage.content,
                         chatId: currentChatId,
                         model: selectedModel
                     ) {
-                        // Updates are handled through the event system
-                        // No need to manually update here
+                        // Events are handled through the event system via handleRepositoryEvent()
+                        // This loop just keeps the task alive until streaming completes
                     }
                 }
                 

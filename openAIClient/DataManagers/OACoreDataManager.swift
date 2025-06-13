@@ -222,11 +222,9 @@ final class OACoreDataManager: @unchecked Sendable {
     @MainActor
     private func handleRemoteChanges() async {
         do {
-            try await self.fetchPersistedChats()
+//            try await self.fetchPersistedChats()
         } catch {
             print("❌ Failed to refresh chats after remote changes: \(error)")
         }
     }
-    
-    
 }

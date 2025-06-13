@@ -19,6 +19,7 @@ enum ChatEvent {
     case chatsUpdated([OAChat])
 }
 
+
 // MARK: - Repository Protocol
 
 @MainActor
@@ -38,7 +39,8 @@ protocol ChatRepository {
     func saveMessage(_ message: OAChatMessage, toChatId chatId: String) async throws
 
     // Streaming
-    func streamMessage(content: String, chatId: String, model: OAModel) -> AsyncStream<OAChatMessage>
+//    func streamMessage(content: String, chatId: String, model: OAModel) -> AsyncStream<OAChatMessage>
+    func streamMessageEvents(content: String, chatId: String, model: OAModel) -> AsyncStream<ChatEvent>
 
     // Configuration
     func updateChatModel(_ chatId: String, model: OAModel) async throws
@@ -121,9 +123,33 @@ final class OAChatRepositoryImpl: ChatRepository {
     }
 
 
-    // MARK: - Streaming
+    // MARK: - Streaming (Legacy - maintained for backward compatibility)
 
-    func streamMessage(content: String, chatId: String, model: OAModel) -> AsyncStream<OAChatMessage> {
+//    func streamMessage(content: String, chatId: String, model: OAModel) -> AsyncStream<OAChatMessage> {
+//        return AsyncStream { continuation in
+//            let task = Task {
+//                for await event in streamMessageEvents(content: content, chatId: chatId, model: model) {
+//                    switch event {
+//                    case .messageStarted(_, let message), .messageUpdated(_, let message), .messageCompleted(_, let message):
+//                        continuation.yield(message)
+//                    case .streamingError:
+//                        break // Error handling happens in the event system
+//                    case .chatDeleted, .chatsUpdated:
+//                        break // Not relevant for streaming
+//                    }
+//                }
+//                continuation.finish()
+//            }
+//            
+//            continuation.onTermination = { _ in
+//                task.cancel()
+//            }
+//        }
+//    }
+
+    // MARK: - New AsyncSequence-based Streaming
+
+    func streamMessageEvents(content: String, chatId: String, model: OAModel) -> AsyncStream<ChatEvent> {
         return AsyncStream { continuation in
             let task = Task {
                 // Start streaming with the provider
@@ -137,109 +163,159 @@ final class OAChatRepositoryImpl: ChatRepository {
                     date: Date()
                 )
 
-                // Notify that streaming started
-                eventSubject.send(.messageStarted(chatId: chatId, message: assistantMessage))
-                continuation.yield(assistantMessage)
+                // Emit started event and publish to event system
+                let startedEvent = ChatEvent.messageStarted(chatId: chatId, message: assistantMessage)
+                eventSubject.send(startedEvent)
+                continuation.yield(startedEvent)
 
                 // Save initial message
                 do {
                     try await coreDataManager.addMessage(assistantMessage, toChatID: chatId, isStreaming: true)
                 } catch {
-                    eventSubject.send(.streamingError(chatId: chatId, error: error))
+                    let errorEvent = ChatEvent.streamingError(chatId: chatId, error: error)
+                    eventSubject.send(errorEvent)
+                    continuation.yield(errorEvent)
                     continuation.finish()
                     return
                 }
 
-                // Monitor stream provider for updates
-                var lastContent = ""
+                // Set up callbacks for stream events
+                streamProvider.onMessageUpdate = { [weak self] responseMessage in
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        
+                        let updatedMessage = OAChatMessage(
+                            id: assistantMessage.id,
+                            role: .assistant,
+                            content: responseMessage.content,
+                            date: responseMessage.timestamp
+                        )
 
-                // Create observation task
-                let observationTask = Task {
-                    while !Task.isCancelled {
-                        withObservationTracking {
-                            _ = streamProvider.messages
-                        } onChange: {
-                            Task { @MainActor in
-                                await self.handleStreamUpdate(
-                                    assistantMessage: assistantMessage,
-                                    chatId: chatId,
-                                    lastContent: &lastContent,
-                                    continuation: continuation
-                                )
-                            }
-                        }
-
-                        if Task.isCancelled { break }
-
+                        // Update in Core Data
                         do {
-                            try await Task.sleep(for: .milliseconds(50))
+                            try await self.coreDataManager.updateMessage(
+                                with: assistantMessage.id,
+                                chatId: chatId,
+                                content: responseMessage.content,
+                                date: responseMessage.timestamp,
+                                isStreaming: true
+                            )
+                            
+                            let updatedEvent = ChatEvent.messageUpdated(chatId: chatId, message: updatedMessage)
+                            self.eventSubject.send(updatedEvent)
+                            continuation.yield(updatedEvent)
                         } catch {
-                            break
+                            let errorEvent = ChatEvent.streamingError(chatId: chatId, error: error)
+                            self.eventSubject.send(errorEvent)
+                            continuation.yield(errorEvent)
                         }
                     }
                 }
 
-                // Wait for streaming to complete
-                let isStreaming = streamProvider.messages.contains { $0.isStreaming }
-                while isStreaming && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(100))
+                streamProvider.onStreamCompleted = { [weak self] responseMessage in
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        
+                        let completedMessage = OAChatMessage(
+                            id: assistantMessage.id,
+                            role: .assistant,
+                            content: responseMessage.content,
+                            date: responseMessage.timestamp
+                        )
+
+                        // Final update in Core Data
+                        do {
+                            try await self.coreDataManager.updateMessage(
+                                with: assistantMessage.id,
+                                chatId: chatId,
+                                content: responseMessage.content,
+                                date: responseMessage.timestamp,
+                                isStreaming: false
+                            )
+                            
+                            let completedEvent = ChatEvent.messageCompleted(chatId: chatId, message: completedMessage)
+                            self.eventSubject.send(completedEvent)
+                            continuation.yield(completedEvent)
+                            continuation.finish()
+                        } catch {
+                            let errorEvent = ChatEvent.streamingError(chatId: chatId, error: error)
+                            self.eventSubject.send(errorEvent)
+                            continuation.yield(errorEvent)
+                            continuation.finish()
+                        }
+                    }
                 }
 
-                observationTask.cancel()
-                continuation.finish()
+                streamProvider.onStreamError = { [weak self] error in
+                    Task { @MainActor in
+                        let errorEvent = ChatEvent.streamingError(chatId: chatId, error: error)
+                        self?.eventSubject.send(errorEvent)
+                        continuation.yield(errorEvent)
+                        continuation.finish()
+                    }
+                }
+
+                // Wait for streaming to complete naturally
+                // The callbacks will handle completion and finish the continuation
             }
 
-            continuation.onTermination = { _ in
+            continuation.onTermination = { [weak self] _ in
                 task.cancel()
+                // Clean up callbacks to prevent memory leaks
+                Task { @MainActor [weak self] in
+                    self?.streamProvider.onMessageUpdate = nil
+                    self?.streamProvider.onStreamCompleted = nil
+                    self?.streamProvider.onStreamError = nil
+                }
             }
         }
     }
 
-    private func handleStreamUpdate(
-        assistantMessage: OAChatMessage,
-        chatId: String,
-        lastContent: inout String,
-        continuation: AsyncStream<OAChatMessage>.Continuation
-    ) async {
-        guard let responseMessage = streamProvider.messages.last,
-              responseMessage.role == .assistant else { return }
-
-        let currentContent = responseMessage.content
-
-        // Only process if content has changed
-        guard currentContent != lastContent else { return }
-        lastContent = currentContent
-
-        // Create updated message
-        let updatedMessage = OAChatMessage(
-            id: assistantMessage.id,
-            role: .assistant,
-            content: currentContent,
-            date: responseMessage.timestamp
-        )
-
-        // Save update to Core Data
-        do {
-            try await coreDataManager.updateMessage(
-                with: assistantMessage.id,
-                chatId: chatId,
-                content: currentContent,
-                date: responseMessage.timestamp,
-                isStreaming: responseMessage.isStreaming
-            )
-
-            if responseMessage.isStreaming {
-                eventSubject.send(.messageUpdated(chatId: chatId, message: updatedMessage))
-            } else {
-                eventSubject.send(.messageCompleted(chatId: chatId, message: updatedMessage))
-            }
-
-            continuation.yield(updatedMessage)
-
-        } catch {
-            eventSubject.send(.streamingError(chatId: chatId, error: error))
-        }
-    }
+//    private func handleStreamUpdate(
+//        assistantMessage: OAChatMessage,
+//        chatId: String,
+//        lastContent: inout String,
+//        continuation: AsyncStream<OAChatMessage>.Continuation
+//    ) async {
+//        guard let responseMessage = streamProvider.messages.last,
+//              responseMessage.role == .assistant else { return }
+//
+//        let currentContent = responseMessage.content
+//
+//        // Only process if content has changed
+//        guard currentContent != lastContent else { return }
+//        lastContent = currentContent
+//
+//        // Create updated message
+//        let updatedMessage = OAChatMessage(
+//            id: assistantMessage.id,
+//            role: .assistant,
+//            content: currentContent,
+//            date: responseMessage.timestamp
+//        )
+//
+//        // Save update to Core Data
+//        do {
+//            try await coreDataManager.updateMessage(
+//                with: assistantMessage.id,
+//                chatId: chatId,
+//                content: currentContent,
+//                date: responseMessage.timestamp,
+//                isStreaming: responseMessage.isStreaming
+//            )
+//
+//            if responseMessage.isStreaming {
+//                eventSubject.send(.messageUpdated(chatId: chatId, message: updatedMessage))
+//            } else {
+//                eventSubject.send(.messageCompleted(chatId: chatId, message: updatedMessage))
+//            }
+//
+//            continuation.yield(updatedMessage)
+//
+//        } catch {
+//            eventSubject.send(.streamingError(chatId: chatId, error: error))
+//        }
+//    }
 
     // MARK: - Configuration
 
