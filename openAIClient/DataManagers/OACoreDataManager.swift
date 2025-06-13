@@ -78,6 +78,26 @@ final class OACoreDataManager: @unchecked Sendable {
         // Refresh chats after deletion
         try await fetchPersistedChats()
     }
+    
+    func deleteChats(with ids: [String]) async throws {
+        guard !ids.isEmpty else { return }
+        
+        try await backgroundContext.perform {
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id IN %@", ids)
+            
+            let chatsToDelete = try self.backgroundContext.fetch(fetchRequest)
+            
+            for chat in chatsToDelete {
+                self.backgroundContext.delete(chat)
+            }
+            
+            try self.backgroundContext.save()
+        }
+        
+        // Refresh chats after batch deletion
+        try await fetchPersistedChats()
+    }
 
     func fetchMessages(for chatID: String) async throws -> [OAChatMessage] {
         try await backgroundContext.perform {

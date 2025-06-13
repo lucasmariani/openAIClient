@@ -31,6 +31,7 @@ protocol ChatRepository {
     // Chat management
     func createNewChat() async throws -> OAChat
     func deleteChat(with id: String) async throws
+    func deleteChats(with ids: [String]) async throws
     func getChats() async throws -> [OAChat]
     func getChat(with id: String) async throws -> OAChat?
 
@@ -101,6 +102,14 @@ final class OAChatRepositoryImpl: ChatRepository {
     func deleteChat(with id: String) async throws {
         try await coreDataManager.deleteChat(with: id)
         eventSubject.send(.chatDeleted(chatId: id))
+    }
+    
+    func deleteChats(with ids: [String]) async throws {
+        try await coreDataManager.deleteChats(with: ids)
+        // Send individual delete events for each chat
+        for id in ids {
+            eventSubject.send(.chatDeleted(chatId: id))
+        }
     }
 
     func getChats() async throws -> [OAChat] {
