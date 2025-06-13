@@ -8,10 +8,10 @@
 import Foundation
 
 /// Represents token usage details including input tokens, output tokens, a breakdown of output tokens, and the total tokens used.
-public struct OAUsage: Codable {
+public struct OAUsage: Codable, Sendable {
 
   /// Details about input tokens
-  public struct OAInputTokensDetails: Codable {
+  public struct OAInputTokensDetails: Codable, Sendable {
     /// Number of cached tokens
     public let cachedTokens: Int?
 
@@ -21,7 +21,7 @@ public struct OAUsage: Codable {
   }
 
   /// A detailed breakdown of the output tokens.
-  public struct OAOutputTokensDetails: Codable {
+  public struct OAOutputTokensDetails: Codable, Sendable {
     /// The number of reasoning tokens.
     public let reasoningTokens: Int?
 

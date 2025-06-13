@@ -36,7 +36,7 @@ public class OAResponseStreamProvider {
     
     // Simple observable properties for tracking current stream
     public var messages: [OAResponseMessage] = []
-    public var isStreaming = false
+//    public var isStreaming = false
     public var error: String?
 
     // MARK: - Initialization
@@ -71,7 +71,7 @@ public class OAResponseStreamProvider {
     public func stopStreaming() {
         streamTask?.cancel()
         streamTask = nil
-        isStreaming = false
+//        isStreaming = false
     }
 
     public func clearMessages() {
@@ -80,10 +80,49 @@ public class OAResponseStreamProvider {
         error = nil
     }
 
+    public func generateTitle(userMessage: String, assistantMessage: String) async throws -> String {
+        let titlePrompt = """
+        Based on this conversation, generate a concise, descriptive title (max 6 words):
+        
+        User: \(userMessage)
+        Assistant: \(assistantMessage)
+        
+        Title:
+        """
+        
+        let parameters = OAModelResponseParameter(
+            input: .array([.message(InputMessage(role: "user", content: .text(titlePrompt)))]),
+            model: .gpt41nano,
+            instructions: "Generate a short, descriptive title for this conversation. Respond with only the title, no additional text.",
+            maxOutputTokens: 20,
+            previousResponseId: nil,
+            temperature: 0.3
+        )
+        
+        guard let defaultService = service as? OADefaultOpenAIService else {
+            // Fallback to simple title generation
+            let words = userMessage.components(separatedBy: .whitespaces).prefix(4)
+            return words.joined(separator: " ")
+        }
+        
+        do {
+            let response = try await Task.detached {
+                try await defaultService.responseCreate(parameters)
+            }.value
+            let generatedTitle = response.outputText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "New Chat"
+            return generatedTitle.isEmpty ? "New Chat" : generatedTitle
+        } catch {
+            print("Failed to generate title via OpenAI: \(error)")
+            // Fallback to simple title generation
+            let words = userMessage.components(separatedBy: .whitespaces).prefix(4)
+            return words.joined(separator: " ")
+        }
+    }
+
     // MARK: - Private Methods
 
     private func streamResponse(for userInput: String) async {
-        isStreaming = true
+//        isStreaming = true
         error = nil
 
         // Create streaming message placeholder
@@ -135,7 +174,7 @@ public class OAResponseStreamProvider {
                 guard !Task.isCancelled else { break }
 
                 switch event {
-                case .responseCreated:
+                case .responseCreated(let event):
                     break
                     
                 case .outputTextDelta(let delta):
@@ -183,7 +222,7 @@ public class OAResponseStreamProvider {
             }
         }
 
-        isStreaming = false
+//        isStreaming = false
     }
 
     private func updateStreamingContent(_ content: String) {
@@ -200,7 +239,12 @@ public class OAResponseStreamProvider {
         guard let index = messages.firstIndex(where: { $0.isStreaming }) else { return }
         updateStreamingTimestampFor(index: index)
         messages[index].content = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        messages[index].isStreaming = false
+//        isStreaming = false
+        var message = messages[index]
+        message.isStreaming = false
+        messages.remove(at: index)
+        messages.insert(message, at: index)
+
     }
 }
 

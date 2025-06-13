@@ -8,7 +8,7 @@
 import Foundation
 
 /// An output item from the model response
-public enum OAOutputItem: Decodable {
+public enum OAOutputItem: Decodable, Sendable {
   /// An output message from the model
   case message(Message)
   /// The results of a file search tool call
@@ -62,7 +62,7 @@ public enum OAOutputItem: Decodable {
   // MARK: - Output Message
 
   /// An output message from the model
-  public struct Message: Decodable {
+  public struct Message: Decodable, Sendable {
     /// The content of the output message
     public let content: [OAContentItem]
     /// The unique ID of the output message
@@ -80,7 +80,7 @@ public enum OAOutputItem: Decodable {
   }
 
   /// Content item in an output message
-  public enum OAContentItem: Decodable {
+  public enum OAContentItem: Decodable, Sendable {
     /// Text output from the model
     case outputText(OAOutputText)
 
@@ -102,7 +102,7 @@ public enum OAOutputItem: Decodable {
     }
 
     /// Text output from the model
-    public struct OAOutputText: Decodable {
+    public struct OAOutputText: Decodable, Sendable {
       /// The text content
       public let text: String
       /// Annotations in the text, if any
@@ -116,7 +116,7 @@ public enum OAOutputItem: Decodable {
     }
 
     /// Annotation in text output
-    public struct OAAnnotation: Decodable {
+    public struct OAAnnotation: Decodable, Sendable {
       // Properties would be defined based on different annotation types
       // Such as file_citation, etc.
     }

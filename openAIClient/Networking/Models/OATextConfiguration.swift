@@ -10,7 +10,7 @@ import Foundation
 // MARK: - TextConfiguration
 
 /// Text configuration options
-public struct OATextConfiguration: Codable {
+public struct OATextConfiguration: Codable, Sendable {
   /// An object specifying the format that the model must output
   public var format: OAFormatType
 
@@ -22,7 +22,7 @@ public struct OATextConfiguration: Codable {
 // MARK: - FormatType
 
 /// Format types for text response
-public enum OAFormatType: Codable {
+public enum OAFormatType: Codable, Sendable {
   case text
   case jsonSchema(OAJsonSchema)
   case jsonObject

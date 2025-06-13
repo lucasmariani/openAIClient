@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct OADefaultOpenAIService: OAOpenAIService {
+struct OADefaultOpenAIService: OAOpenAIService, Sendable {
 
   init(
     apiKey: String,

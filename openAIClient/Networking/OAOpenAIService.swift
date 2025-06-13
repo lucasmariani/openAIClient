@@ -34,7 +34,7 @@ public enum APIError: Error {
 
 // MARK: - OpenAIEnvironment
 
-public struct OAOpenAIEnvironment {
+public struct OAOpenAIEnvironment: Sendable {
 
     /// The base URL for the OpenAI API.
     /// Example: "https://api.openai.com"
@@ -51,7 +51,7 @@ public struct OAOpenAIEnvironment {
 
 // MARK: - Authorization
 
-public enum Authorization {
+public enum Authorization: Sendable {
     case apiKey(String)
     case bearer(String)
 

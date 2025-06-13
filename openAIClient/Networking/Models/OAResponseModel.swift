@@ -9,10 +9,10 @@ import Foundation
 
 /// The Response object returned when retrieving a model response
 /// [Get a model response](https://platform.openai.com/docs/api-reference/responses/get)
-public struct OAResponseModel: Decodable {
+public struct OAResponseModel: Decodable, Sendable {
 
   /// The status of the response generation.
-  public enum Status: String, Decodable {
+  public enum Status: String, Decodable, Sendable {
     case completed
     case failed
     case inProgress = "in_progress"
@@ -21,7 +21,7 @@ public struct OAResponseModel: Decodable {
     case incomplete
   }
 
-  public struct ErrorObject: Decodable {
+  public struct ErrorObject: Decodable, Sendable {
 
     /// The error code for the response.
     public let code: String
@@ -31,13 +31,13 @@ public struct OAResponseModel: Decodable {
   }
 
   /// Incomplete details structure
-  public struct IncompleteDetails: Decodable {
+  public struct IncompleteDetails: Decodable, Sendable {
     /// The reason why the response is incomplete
     public let reason: String
   }
 
   /// Input tokens details
-  public struct InputTokensDetails: Decodable {
+  public struct InputTokensDetails: Decodable, Sendable {
     /// Number of cached tokens
     public let cachedTokens: Int
 
@@ -47,7 +47,7 @@ public struct OAResponseModel: Decodable {
   }
 
   /// Output tokens details
-  public struct OutputTokensDetails: Decodable {
+  public struct OutputTokensDetails: Decodable, Sendable {
     /// Number of reasoning tokens
     public let reasoningTokens: Int
 

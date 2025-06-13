@@ -18,6 +18,27 @@ var isMacCatalyst: Bool {
 
 class OAChatViewController: UIViewController {
 
+    private enum ChatStateIdentifier: String {
+        case emptyPlaceholder
+        case loadingPlaceholder
+        case errorPlaceholder
+    }
+
+    private struct Constants {
+        static let emptyPlaceholder = ChatStateIdentifier.emptyPlaceholder.rawValue
+        static let loadingPlaceholder = ChatStateIdentifier.loadingPlaceholder.rawValue
+        static let errorPlaceholder = ChatStateIdentifier.errorPlaceholder.rawValue
+        static let emptyPlaceholerText = "Select a chat to start messaging"
+        static let loadingPlacerholderText = "Loading chat..."
+        static let errorPlaceholderText = "Error loading chat"
+
+        static let streamingPlacerholderText = "Streaming response..."
+        static let loadedPlaceholderText = "Type a message..."
+
+        static let cellId = "chatMessageCell"
+
+    }
+
     private let tableView = UITableView()
     private let inputField = UITextField()
     private let sendButton = UIButton(type: .system)
@@ -86,11 +107,8 @@ class OAChatViewController: UIViewController {
     private func setupSubviews() {
         // Input Container
 
-
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
-
-
 
         // Input Field
         inputField.translatesAutoresizingMaskIntoConstraints = false
@@ -115,7 +133,7 @@ class OAChatViewController: UIViewController {
 
         // TableView
         tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.register(OAChatMessageCell.self, forCellReuseIdentifier: "chatMessageCell")
+        tableView.register(OAChatMessageCell.self, forCellReuseIdentifier: Constants.cellId)
         tableView.separatorStyle = .none // Optional: if you want to hide separators
         tableView.keyboardDismissMode = .interactive // Optional: dismiss keyboard on scroll
         view.addSubview(tableView)
@@ -153,31 +171,31 @@ class OAChatViewController: UIViewController {
     private func setupDataSource() {
         self.dataSource = UITableViewDiffableDataSource<Int, String>(
             tableView: self.tableView
-        ) { [weak self] tableView, indexPath, messageID in
+        ) { [weak self] (tableView: UITableView, indexPath: IndexPath, messageID: String) -> UITableViewCell in
             guard let self = self else { return UITableViewCell() }
             
             // Handle placeholder cases
-            if messageID == "no-chat-placeholder" {
+            if messageID == Constants.emptyPlaceholder {
                 let cell = UITableViewCell()
-                cell.textLabel?.text = "Select a chat to start messaging"
+                cell.textLabel?.text = Constants.emptyPlaceholerText
                 cell.textLabel?.textColor = .secondaryLabel
                 cell.textLabel?.textAlignment = .center
                 cell.selectionStyle = .none
                 return cell
             }
             
-            if messageID == "loading-placeholder" {
+            if messageID == Constants.loadingPlaceholder {
                 let cell = UITableViewCell()
-                cell.textLabel?.text = "Loading chat..."
+                cell.textLabel?.text = Constants.loadingPlacerholderText
                 cell.textLabel?.textColor = .secondaryLabel
                 cell.textLabel?.textAlignment = .center
                 cell.selectionStyle = .none
                 return cell
             }
             
-            if messageID == "error-placeholder" {
+            if messageID == Constants.errorPlaceholder {
                 let cell = UITableViewCell()
-                cell.textLabel?.text = "Error loading chat"
+                cell.textLabel?.text = Constants.errorPlaceholderText
                 cell.textLabel?.textColor = .systemRed
                 cell.textLabel?.textAlignment = .center
                 cell.selectionStyle = .none
@@ -185,11 +203,11 @@ class OAChatViewController: UIViewController {
             }
             
             // Handle normal message case
-            guard let cell = tableView.dequeueReusableCell(withIdentifier: "chatMessageCell", for: indexPath) as? OAChatMessageCell else {
+            guard let cell = tableView.dequeueReusableCell(withIdentifier: Constants.cellId, for: indexPath) as? OAChatMessageCell else {
                 return UITableViewCell()
             }
             
-            if case .chat(_, let messages, _) = self.chatDataManager.viewState,
+            if case .chat(_, let messages, _, _) = self.chatDataManager.viewState,
                let message = messages.first(where: { $0.id == messageID }) {
                 cell.configure(with: message.content, role: message.role)
             } else {
@@ -225,17 +243,20 @@ class OAChatViewController: UIViewController {
             updateSnapshot(for: .empty)
             inputField.isEnabled = false
             inputField.text = ""
-            inputField.placeholder = "Select a chat to start messaging"
-            
-        case .chat(let id, let messages, let reconfiguringMessageID):
+            inputField.placeholder = Constants.emptyPlaceholerText
+
+        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
             updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
-            inputField.isEnabled = true
-            inputField.placeholder = "Type a message..."
-            
-        case .loading(_):
-            inputField.isEnabled = false
-            inputField.placeholder = "Loading..."
-            
+            if isStreaming {
+                inputField.isEnabled = false
+                inputField.placeholder = Constants.streamingPlacerholderText
+            } else {
+                inputField.isEnabled = true
+                inputField.placeholder = "Type a message..."
+            }
+        case .loading:
+            break
+
         case .error(let message):
             inputField.isEnabled = false
             inputField.placeholder = "Error: \(message)"
@@ -248,9 +269,11 @@ class OAChatViewController: UIViewController {
         
         switch state {
         case .empty:
-            snapshot.appendItems(["no-chat-placeholder"])
-            
-        case .chat(_, let messages, let reconfiguringMessageID):
+            snapshot.appendItems([Constants.emptyPlaceholder])
+
+        case .chat(_, let messages, let reconfiguringMessageID, _):
+            // NOTE: is isStreaming == true, update tableView here.
+
             let messageIDs = messages.map { $0.id }
             snapshot.appendItems(messageIDs)
             
@@ -260,29 +283,29 @@ class OAChatViewController: UIViewController {
             }
             
         case .loading:
-            snapshot.appendItems(["loading-placeholder"])
-            
+            snapshot.appendItems([Constants.loadingPlaceholder])
+
         case .error:
-            snapshot.appendItems(["error-placeholder"])
+            snapshot.appendItems([Constants.errorPlaceholder])
         }
         
         let shouldAnimate: Bool
-        if case .chat(_, let messages, _) = state {
+        if case .chat(_, let messages, _, _) = state {
             shouldAnimate = animatingDifferences && messages.count <= 100
         } else {
             shouldAnimate = animatingDifferences
         }
         
         self.dataSource.apply(snapshot, animatingDifferences: shouldAnimate) { [weak self] in
-            if case .chat(_, let messages, _) = state, !messages.isEmpty {
+            if case .chat(_, let messages, _, _) = state, !messages.isEmpty {
                 self?.scrollToBottomIfNeeded()
             }
         }
     }
     
     private func scrollToBottomIfNeeded() {
-        guard case .chat(_, let messages, _) = chatDataManager.viewState, !messages.isEmpty else { return }
-        
+        guard case .chat(_, let messages, _, _) = chatDataManager.viewState, !messages.isEmpty else { return }
+
         DispatchQueue.main.async {
             let lastIndexPath = IndexPath(item: messages.count - 1, section: 0)
             if self.tableView.numberOfSections > 0 && 
@@ -319,7 +342,6 @@ class OAChatViewController: UIViewController {
     }
 
     @objc private func didTapModelButton() {
-
         if !isMacCatalyst {
             self.presentModelSelectionActionSheet()
         }

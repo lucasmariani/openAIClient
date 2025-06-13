@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct OAReasoning: Codable {
+public struct OAReasoning: Codable, Sendable {
   public init(effort: String? = nil, generateSummary: String? = nil, summary: String? = nil) {
     self.effort = effort
     self.generateSummary = generateSummary

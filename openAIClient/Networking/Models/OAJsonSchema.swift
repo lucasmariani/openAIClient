@@ -24,7 +24,7 @@ import Foundation
 /// Array
 /// Enum
 /// anyOf
-public enum JSONSchemaType: Codable, Equatable {
+public enum JSONSchemaType: Codable, Equatable, Sendable {
   case string
   case number
   case integer
@@ -107,7 +107,7 @@ public enum JSONSchemaType: Codable, Equatable {
 
 // MARK: - JSONSchema
 
-public class OAJsonSchema: Codable, Equatable {
+public final class OAJsonSchema: Codable, Equatable, @unchecked Sendable {
 
   public init(
     type: JSONSchemaType? = nil,

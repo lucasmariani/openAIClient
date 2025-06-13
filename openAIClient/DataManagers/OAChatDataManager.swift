@@ -10,7 +10,7 @@ import Foundation
 
 enum ChatViewState {
     case empty
-    case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil)
+    case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil, isStreaming: Bool = false)
     case loading(chatId: String)
     case error(String)
 }
@@ -58,19 +58,32 @@ final class OAChatDataManager {
         case .messageStarted(let chatId, let message):
             if chatId == currentChatId {
                 messages.append(message)
-                updateViewState()
+                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+//                updateViewState()
             }
             
         case .messageUpdated(let chatId, let message):
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                updateViewState(reconfiguringMessageID: message.id)
+//                if let chatId = currentChatId {
+                    viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+//                } else {
+//                    viewState = .empty
+//                }
+//                updateViewState(reconfiguringMessageID: message.id)
             }
             
         case .messageCompleted(let chatId, let message):
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                updateViewState(reconfiguringMessageID: message.id)
+                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: false)
+                
+                // Generate title after first assistant response
+                if message.role == .assistant && shouldGenerateTitle() {
+                    Task {
+                        await generateChatTitle(for: chatId)
+                    }
+                }
             }
             
         case .streamingError(let chatId, let error):
@@ -101,12 +114,45 @@ final class OAChatDataManager {
         viewState = .empty
     }
     
-    private func updateViewState(reconfiguringMessageID: String? = nil) {
-        if let chatId = currentChatId {
-            viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: reconfiguringMessageID)
-        } else {
-            viewState = .empty
+//    private func updateViewState(state: ChatViewState, reconfiguringMessageID: String? = nil) {
+//        switch state {
+//        case .empty:
+//            <#code#>
+//        case .chat(id: let id, messages: let messages, reconfiguringMessageID: let reconfiguringMessageID):
+//            <#code#>
+//        case .loading(chatId: let chatId):
+//            <#code#>
+//        case .error(_):
+//            <#code#>
+//        }
+////        if let chatId = currentChatId/*, !messages.isEmpty*/ {
+////            viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: reconfiguringMessageID)
+////        } else {
+////            viewState = .empty
+////        }
+//    }
+    
+    private func shouldGenerateTitle() -> Bool {
+        // Generate title only if we have exactly 2 messages (1 user + 1 assistant)
+        return messages.count == 2 && 
+               messages.first?.role == .user && 
+               messages.last?.role == .assistant
+    }
+    
+    private func generateChatTitle(for chatId: String) async {
+        guard let userMessage = messages.first?.content,
+              let assistantMessage = messages.last?.content else { return }
+        
+        do {
+            let title = try await requestTitleFromOpenAI(userMessage: userMessage, assistantMessage: assistantMessage)
+            try await repository.updateChatTitle(chatId, title: title)
+        } catch {
+            print("Failed to generate chat title: \(error)")
         }
+    }
+    
+    private func requestTitleFromOpenAI(userMessage: String, assistantMessage: String) async throws -> String {
+        return try await repository.generateChatTitle(userMessage: userMessage, assistantMessage: assistantMessage)
     }
 
     // MARK: - Public Methods
@@ -155,7 +201,11 @@ final class OAChatDataManager {
             messages = try await repository.getMessages(for: id)
             selectedModel = chat.selectedModel
             
-            updateViewState()
+            if let chatId = currentChatId {
+                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
+            } else {
+                viewState = .empty
+            }
             return chat
             
         } catch {
@@ -171,7 +221,7 @@ final class OAChatDataManager {
 
         // Optimistically add user message to UI
         messages.append(chatMessage)
-        updateViewState()
+        viewState = .chat(id: currentChatId, messages: messages, reconfiguringMessageID: chatMessage.id, isStreaming: true)
 
         Task {
             do {

@@ -10,7 +10,7 @@ import Foundation
 // MARK: ModelResponseParameter
 
 /// [Create a model response](https://platform.openai.com/docs/api-reference/responses/create)
-public struct OAModelResponseParameter: Codable {
+public struct OAModelResponseParameter: Codable, Sendable {
 
   /// Initialize a new ModelResponseParameter
   public init(

@@ -43,7 +43,9 @@ final class OACoreDataManager: @unchecked Sendable {
         }
         
         await MainActor.run {
-            self.chats = fetchedChats
+            // Deduplicate chats by ID to handle CloudKit sync duplicates
+            let uniqueChats = Dictionary(fetchedChats.map { ($0.id, $0) }, uniquingKeysWith: { latest, _ in latest })
+            self.chats = Array(uniqueChats.values).sorted { $0.date > $1.date }
         }
     }
 
@@ -156,7 +158,7 @@ final class OACoreDataManager: @unchecked Sendable {
             messageMO.content = message.content
             messageMO.date = message.date
             messageMO.chatId = chatID
-            messageMO.isStreaming = isStreaming
+            messageMO.isStreaming = isStreaming // i don't think i need to store this in CoreData.
 
             // Add the new message to the chat's messages relationship
             chatMO.addToMessages(messageMO)
@@ -197,6 +199,22 @@ final class OACoreDataManager: @unchecked Sendable {
             chatMO.selectedModel = model.value
             try self.backgroundContext.save()
         }
+    }
+
+    func updateChatTitle(_ chatId: String, title: String) async throws {
+        try await backgroundContext.perform {
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
+            fetchRequest.fetchLimit = 1
+
+            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+                throw OACoreDataError.chatNotFound
+            }
+
+            chatMO.title = title
+            try self.backgroundContext.save()
+        }
+        try await fetchPersistedChats()
     }
     
     // MARK: - Sync Methods
