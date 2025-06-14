@@ -6,14 +6,27 @@
 //
 
 import CoreData
-import Combine
+import Observation
+
+// MARK: - Core Data Change Delegate
+
+@MainActor
+protocol OACoreDataManagerDelegate: AnyObject {
+    func coreDataManagerDidUpdateChats(_ chats: [OAChat])
+}
 
 final class OACoreDataManager: @unchecked Sendable {
 
-    @Published private(set) var chats: [OAChat] = []
+    private var chats: [OAChat] = []
+    weak var delegate: OACoreDataManagerDelegate?
+    
+    // MARK: - Public Access
+    
+    func getCurrentChats() -> [OAChat] {
+        return chats
+    }
 
     private let backgroundContext: NSManagedObjectContext
-    private var counter: Int = 0
 
     init() {
         backgroundContext = OACoreDataStack.shared.container.newBackgroundContext()
@@ -35,10 +48,11 @@ final class OACoreDataManager: @unchecked Sendable {
     }
 
     func fetchPersistedChats() async throws {
-        let fetchedChats = try await backgroundContext.perform {
+        // Use modern background task pattern
+        let fetchedChats = try await OACoreDataStack.shared.performBackgroundTask { context in
             let req: NSFetchRequest<Chat> = Chat.fetchRequest()
             req.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
-            let chats = try self.backgroundContext.fetch(req)
+            let chats = try context.fetch(req)
             return chats.compactMap { OAChat(chat: $0) }
         }
         
@@ -46,20 +60,30 @@ final class OACoreDataManager: @unchecked Sendable {
             // Deduplicate chats by ID to handle CloudKit sync duplicates
             let uniqueChats = Dictionary(fetchedChats.map { ($0.id, $0) }, uniquingKeysWith: { latest, _ in latest })
             self.chats = Array(uniqueChats.values).sorted { $0.date > $1.date }
+            self.delegate?.coreDataManagerDidUpdateChats(self.chats)
         }
     }
 
     func newChat() async throws {
-        try await backgroundContext.perform {
-            self.counter += 1
-            let chat = Chat(context: self.backgroundContext)
+        let chatDate = Date.now
+        
+        // Use modern background task pattern with automatic save
+        try await OACoreDataStack.shared.performBackgroundTask { context in
+            let chat = Chat(context: context)
             chat.id = UUID().uuidString
-            chat.date = .now
-            chat.title = "Title \(self.counter)"
-            try self.backgroundContext.save()
+            chat.date = chatDate
+            chat.title = "New Chat \(Self.formatChatTimestamp(chatDate))"
+            // Save is handled automatically by performBackgroundTask
         }
+        
         // Refresh chats after creation
         try await fetchPersistedChats()
+    }
+    
+    private static func formatChatTimestamp(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter.string(from: date)
     }
 
     func deleteChat(with id: String) async throws {
@@ -69,7 +93,7 @@ final class OACoreDataManager: @unchecked Sendable {
             fetchRequest.fetchLimit = 1
 
             guard let chatManagedObject = try self.backgroundContext.fetch(fetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: id, operation: "deleteChat")
             }
             
             self.backgroundContext.delete(chatManagedObject)
@@ -82,18 +106,14 @@ final class OACoreDataManager: @unchecked Sendable {
     func deleteChats(with ids: [String]) async throws {
         guard !ids.isEmpty else { return }
         
-        try await backgroundContext.perform {
-            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
-            fetchRequest.predicate = NSPredicate(format: "id IN %@", ids)
-            
-            let chatsToDelete = try self.backgroundContext.fetch(fetchRequest)
-            
-            for chat in chatsToDelete {
-                self.backgroundContext.delete(chat)
-            }
-            
-            try self.backgroundContext.save()
-        }
+        // Use modern batch delete for better performance
+        let deletedObjectIDs = try await OACoreDataStack.shared.performBatchDelete(
+            entity: Chat.self,
+            predicateFormat: "id IN %@",
+            arguments: [ids]
+        )
+        
+        print("✅ Batch deleted \(deletedObjectIDs.count) chats")
         
         // Refresh chats after batch deletion
         try await fetchPersistedChats()
@@ -106,7 +126,7 @@ final class OACoreDataManager: @unchecked Sendable {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
-                    throw OACoreDataError.chatNotFound
+                    throw StructuredError.chatNotFound(chatId: chatID, operation: "fetchMessages")
             }
 
             // Use a proper fetch request with sort descriptors instead of relationship set
@@ -128,33 +148,33 @@ final class OACoreDataManager: @unchecked Sendable {
         }
     }
 
-    func updateMessage(with messageId: String, chatId: String, content: String, date: Date, isStreaming: Bool? = nil) async throws {
+    func updateMessage(with chatMessage: OAResponseMessage, chatId: String, isStreaming: Bool? = nil) async throws {
         try await backgroundContext.perform {
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: chatId, operation: "updateMessage")
             }
 
             // Find the specific message within the chat's messages
             guard let messages = chatMO.messages as? Set<Message>,
-                  let messageToUpdate = messages.first(where: { $0.id == messageId }) else {
-                throw OACoreDataError.messageNotFound
+                  let messageToUpdate = messages.first(where: { $0.id == chatMessage.responseId }) else {
+                throw StructuredError.messageNotFound(messageId: chatMessage.responseId, chatId: chatId, operation: "updateMessage")
             }
-            
+
             // Update the message properties
-            messageToUpdate.content = content
-            messageToUpdate.date = date
-            
+            messageToUpdate.content = chatMessage.content
+            messageToUpdate.date = chatMessage.timestamp
+
             // Update streaming state if provided
             if let isStreaming = isStreaming {
                 messageToUpdate.isStreaming = isStreaming
             }
 
             // Update the chat's date to reflect the latest message activity
-            chatMO.date = date
+            chatMO.date = chatMessage.timestamp
 
             try self.backgroundContext.save()
         }
@@ -168,7 +188,7 @@ final class OACoreDataManager: @unchecked Sendable {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: chatID, operation: "addMessage")
             }
 
             // Create new Message Managed Object
@@ -190,14 +210,14 @@ final class OACoreDataManager: @unchecked Sendable {
         }
     }
 
-    func updateProvisionaryInputText(for chatID: String, text: String?) async throws {
+    func updateProvisionalInputText(for chatID: String, text: String?) async throws {
         try await backgroundContext.perform {
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             fetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: chatID, operation: "updateProvisionaryInputText")
             }
 
             chatMO.provisionaryInputText = text
@@ -213,7 +233,7 @@ final class OACoreDataManager: @unchecked Sendable {
             fetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: chatId, operation: "updateSelectedModelFor")
             }
 
             chatMO.selectedModel = model.value
@@ -228,7 +248,7 @@ final class OACoreDataManager: @unchecked Sendable {
             fetchRequest.fetchLimit = 1
 
             guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
-                throw OACoreDataError.chatNotFound
+                throw StructuredError.chatNotFound(chatId: chatId, operation: "updateChatTitle")
             }
 
             chatMO.title = title
@@ -242,7 +262,7 @@ final class OACoreDataManager: @unchecked Sendable {
     @MainActor
     private func handleRemoteChanges() async {
         do {
-//            try await self.fetchPersistedChats()
+            try await self.fetchPersistedChats()
         } catch {
             print("❌ Failed to refresh chats after remote changes: \(error)")
         }

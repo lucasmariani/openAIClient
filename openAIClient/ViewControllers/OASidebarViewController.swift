@@ -6,13 +6,13 @@
 //
 
 import UIKit
-import Combine
+import Observation
 
 class OASidebarViewController: UIViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
-    private let repository: ChatRepository
-    private var cancellables = Set<AnyCancellable>()
+    private let chatDataManager: OAChatDataManager
+    private var observationTask: Task<Void, Never>?
     
     // Selection mode properties
     private var addButton: UIBarButtonItem!
@@ -37,13 +37,17 @@ class OASidebarViewController: UIViewController {
         case chat(OAChat) // Full chat object
     }
 
-    init(repository: ChatRepository) {
-        self.repository = repository
+    init(chatDataManager: OAChatDataManager) {
+        self.chatDataManager = chatDataManager
         super.init(nibName: nil, bundle: nil)
         self.title = "Chats"
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    
+    deinit {
+        observationTask?.cancel()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -68,7 +72,6 @@ class OASidebarViewController: UIViewController {
                 }
             }
         )
-
 
         let symbolConf: UIImage.SymbolConfiguration = UIImage.SymbolConfiguration.preferringMulticolor()
         let checkmarkImage = UIImage(systemName: "checkmark.circle")?.withConfiguration(symbolConf)
@@ -104,12 +107,6 @@ class OASidebarViewController: UIViewController {
 
         flexibleSpace = UIBarButtonItem(systemItem: .flexibleSpace)
         restoreButtonsConfiguration()
-
-//
-//        
-//        // Set initial navigation items
-////        setEditing(false, animated: true)
-//        navigationItem.rightBarButtonItems = [addButton, selectButton]
     }
 
     private func setupCollectionView() {
@@ -127,7 +124,7 @@ class OASidebarViewController: UIViewController {
             let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                 Task {
                     do {
-                        try await self.repository.deleteChat(with: chat.id)
+                        try await self.chatDataManager.deleteChat(with: chat.id)
                         completion(true)
                     } catch {
                         await MainActor.run {
@@ -195,12 +192,27 @@ class OASidebarViewController: UIViewController {
     }
 
     private func setupBindings() {
-        repository.chatsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] chats in
-                self?.updateSnapshot(with: chats)
+        startObservation()
+        updateSnapshot(with: self.chatDataManager.chats)
+    }
+    
+    private func startObservation() {
+        observationTask = Task { @MainActor in
+            while !Task.isCancelled {
+                withObservationTracking {
+                    // Observe changes to the chats array
+                    let _ = chatDataManager.chats
+                } onChange: {
+                    Task { @MainActor in
+                        guard !Task.isCancelled else { return }
+                        self.updateSnapshot(with: self.chatDataManager.chats)
+                    }
+                }
+                
+                // Small delay to prevent excessive observation polling
+                try? await Task.sleep(for: .milliseconds(16))
             }
-            .store(in: &cancellables)
+        }
     }
 
     private func updateSnapshot(with chats: [OAChat]) {
@@ -210,32 +222,23 @@ class OASidebarViewController: UIViewController {
         // Add existing chats
         let chatItems = chats.map { Item.chat($0) }
 
-        print("Chats in CD count: \(chats.count)")
-
         snapshot.appendItems(chatItems, toSection: .chats)
 
         dataSource.apply(snapshot, animatingDifferences: true)
     }
 
     private func selectLatestChat() {
-        Task {
-            do {
-                let chats = try await repository.getChats()
-                guard !chats.isEmpty else { return }
-                await MainActor.run {
-                    let indexPath = IndexPath(item: 0, section: 0)
-                    self.collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
-                    self.collectionView.delegate?.collectionView?(self.collectionView, didSelectItemAt: indexPath)
-                }
-            } catch {
-                print("Failed to get chats for selection: \(error)")
-            }
-        }
+        let chats = chatDataManager.chats
+        guard !chats.isEmpty else { return }
+        
+        let indexPath = IndexPath(item: 0, section: 0)
+        collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
+        collectionView.delegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
     }
 
     @objc private func addNewChat() async {
         do {
-            _ = try await repository.createNewChat()
+            try await chatDataManager.createNewChat()
         } catch {
             await MainActor.run {
                 showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
@@ -379,7 +382,7 @@ class OASidebarViewController: UIViewController {
     private func performBatchDelete(chats: [OAChat]) async {
         do {
             let chatIds = chats.map { $0.id }
-            try await repository.deleteChats(with: chatIds)
+            try await chatDataManager.deleteChats(with: chatIds)
             
             await MainActor.run {
                 setEditing(false, animated: true)
@@ -434,7 +437,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
             let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
                 Task {
                     do {
-                        try await self?.repository.deleteChat(with: chat.id)
+                        try await self?.chatDataManager.deleteChat(with: chat.id)
                     } catch {
                         await MainActor.run {
                             self?.showErrorAlert(message: "Failed to delete chat: \(error.localizedDescription)")

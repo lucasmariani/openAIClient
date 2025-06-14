@@ -46,7 +46,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         self.chatDataManager = chatDataManager
         self.repository = repository
 
-        let sidebar = OASidebarViewController(repository: repository)
+        let sidebar = OASidebarViewController(chatDataManager: chatDataManager)
         let sidebarNav = UINavigationController(rootViewController: sidebar)
 
         let chatVC = OAChatViewController(chatDataManager: chatDataManager)

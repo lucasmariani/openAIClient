@@ -6,28 +6,31 @@
 //
 
 import Foundation
-@preconcurrency import Combine
+import Observation
 
 enum ChatViewState {
     case empty
     case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil, isStreaming: Bool = false)
-    case loading(chatId: String)
+    case loading
     case error(String)
 }
 
 @MainActor
+@Observable
 final class OAChatDataManager {
     
     // MARK: - Properties
     
     private let repository: ChatRepository
     private var currentChatId: String? = nil
-    var messages: [OAChatMessage] = []
     
-    @Published var selectedModel: OAModel = .gpt41nano
-    @Published var viewState: ChatViewState = .empty
-    
-    private var cancellables = Set<AnyCancellable>()
+    // UI State - All UI components should bind to these properties
+    var chats: [OAChat] = []           // For sidebar
+    var messages: [OAChatMessage] = [] // For chat view
+    var selectedModel: OAModel = .gpt41nano
+    var viewState: ChatViewState = .loading
+
+    private var eventTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
 
     // MARK: - Initialization
@@ -35,42 +38,61 @@ final class OAChatDataManager {
     init(repository: ChatRepository) {
         self.repository = repository
         setupEventHandling()
+        loadInitialChats()
     }
     
-    deinit {
-        streamingTask?.cancel()
-        cancellables.removeAll()
+    private func loadInitialChats() {
+        Task {
+            do {
+                chats = try await repository.getChats()
+                if chats.isEmpty {
+                    viewState = .empty
+                }
+            } catch {
+                print("Failed to load initial chats: \(error)")
+            }
+        }
     }
 
     // MARK: - Private Methods
     
     private func setupEventHandling() {
-        repository.eventPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] event in
-                self?.handleRepositoryEvent(event)
+        eventTask = Task { @MainActor in
+            for await event in repository.eventStream {
+                guard !Task.isCancelled else { break }
+                handleRepositoryEvent(event)
             }
-            .store(in: &cancellables)
+        }
     }
     
     private func handleRepositoryEvent(_ event: ChatEvent) {
         switch event {
         case .messageStarted(let chatId, let message):
+            print("📩 DataManager: messageStarted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
                 messages.append(message)
                 viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+            } else {
+                print("📩 DataManager: Ignoring messageStarted for different chat (current: \(currentChatId ?? "none"))")
             }
             
         case .messageUpdated(let chatId, let message):
+            print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
                 viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+            } else {
+                print("📝 DataManager: Ignoring messageUpdated for different chat (current: \(currentChatId ?? "none"))")
             }
             
         case .messageCompleted(let chatId, let message):
+            print("✅ DataManager: messageCompleted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
                 viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: false)
+                print("📊 DataManager: Updated viewState to non-streaming with \(messages.count) messages")
                 
                 // Generate title after first assistant response
                 if message.role == .assistant && shouldGenerateTitle() {
@@ -78,11 +100,15 @@ final class OAChatDataManager {
                         await generateChatTitle(for: chatId)
                     }
                 }
+            } else {
+                print("✅ DataManager: Ignoring messageCompleted for different chat (current: \(currentChatId ?? "none"))")
             }
             
         case .streamingError(let chatId, let error):
             if chatId == currentChatId {
-                print("Streaming error in chat \(chatId): \(error)")
+                let errorString = "Streaming error in chat \(chatId): \(error)"
+                print(errorString)
+                viewState = .error(errorString)
             }
             
         case .chatDeleted(let chatId):
@@ -90,15 +116,24 @@ final class OAChatDataManager {
                 clearCurrentChat()
             }
             
-        case .chatsUpdated:
-            // This is handled by the sidebar directly through the repository
+        case .chatsUpdated(let updatedChats):
+            print("📋 DataManager: chatsUpdated with \(updatedChats.count) chats")
+            chats = updatedChats
+
+        case .chatCreated:
             break
+        
         }
     }
     
     private func updateMessageInLocalArray(_ message: OAChatMessage) {
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            let oldContent = messages[index].content
             messages[index] = message
+            print("🔄 DataManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
+        } else {
+            print("⚠️ DataManager: Could not find message with ID \(message.id) in local array of \(messages.count) messages")
+            print("⚠️ DataManager: Available message IDs: \(messages.map { $0.id })")
         }
     }
     
@@ -120,15 +155,12 @@ final class OAChatDataManager {
               let assistantMessage = messages.last?.content else { return }
         
         do {
-            let title = try await requestTitleFromOpenAI(userMessage: userMessage, assistantMessage: assistantMessage)
-            try await repository.updateChatTitle(chatId, title: title)
+            try await repository.generateChatTitle(userMessage: userMessage,
+                                                   assistantMessage: assistantMessage,
+                                                   chatId: chatId)
         } catch {
             print("Failed to generate chat title: \(error)")
         }
-    }
-    
-    private func requestTitleFromOpenAI(userMessage: String, assistantMessage: String) async throws -> String {
-        return try await repository.generateChatTitle(userMessage: userMessage, assistantMessage: assistantMessage)
     }
 
     // MARK: - Public Methods
@@ -156,10 +188,10 @@ final class OAChatDataManager {
         }
     }
 
-    func saveProvisionaryTextInput(_ inputText: String?) async {
+    func saveProvisionalTextInput(_ inputText: String?) async {
         guard let chatId = currentChatId else { return }
         do {
-            try await repository.updateProvisionaryText(chatId, text: inputText)
+            try await repository.updateProvisionalText(chatId, text: inputText)
         } catch {
             print("Failed to save provisionary text: \(error)")
         }
@@ -230,5 +262,19 @@ final class OAChatDataManager {
         if chatId == nil {
             clearCurrentChat()
         }
+    }
+    
+    // MARK: - Chat Management Methods for UI
+    
+    func createNewChat() async throws {
+        try await repository.createNewChat()
+    }
+    
+    func deleteChat(with id: String) async throws {
+        try await repository.deleteChat(with: id)
+    }
+    
+    func deleteChats(with ids: [String]) async throws {
+        try await repository.deleteChats(with: ids)
     }
 }

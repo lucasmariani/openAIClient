@@ -6,24 +6,20 @@
 //
 
 import UIKit
-import Combine
+import Observation
 
 class OAChatViewController: UIViewController {
 
     private enum ChatStateIdentifier: String {
         case emptyPlaceholder
-        case loadingPlaceholder
         case errorPlaceholder
     }
 
     private struct Constants {
         static let emptyPlaceholder = ChatStateIdentifier.emptyPlaceholder.rawValue
-        static let loadingPlaceholder = ChatStateIdentifier.loadingPlaceholder.rawValue
         static let errorPlaceholder = ChatStateIdentifier.errorPlaceholder.rawValue
         static let emptyPlaceholerText = "Select a chat to start messaging"
-        static let loadingPlacerholderText = "Loading chat..."
         static let errorPlaceholderText = "Error loading chat"
-
         static let streamingPlacerholderText = "Streaming response..."
         static let loadedPlaceholderText = "Type a message..."
 
@@ -42,7 +38,7 @@ class OAChatViewController: UIViewController {
     private let chatDataManager: OAChatDataManager
     private var currentlySelectedModel: OAModel?
 
-    private var cancellables = Set<AnyCancellable>()
+    private var observationTask: Task<Void, Never>?
 
     init(chatDataManager: OAChatDataManager) {
         self.chatDataManager = chatDataManager
@@ -51,6 +47,10 @@ class OAChatViewController: UIViewController {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+    
+    deinit {
+        observationTask?.cancel()
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -73,6 +73,7 @@ class OAChatViewController: UIViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         removeKeyboardObservers()
+        observationTask?.cancel()
     }
 
     private func setupNavBar() {
@@ -106,7 +107,7 @@ class OAChatViewController: UIViewController {
         inputField.isEnabled = true
         inputField.isUserInteractionEnabled = true
         inputField.borderStyle = .roundedRect
-        inputField.placeholder = "Type a message..."
+//        inputField.placeholder = Constants.loadedPlaceholderText
         inputContainerView.addSubview(inputField)
 
         // Send Button
@@ -175,15 +176,6 @@ class OAChatViewController: UIViewController {
                 return cell
             }
             
-            if messageID == Constants.loadingPlaceholder {
-                let cell = UITableViewCell()
-                cell.textLabel?.text = Constants.loadingPlacerholderText
-                cell.textLabel?.textColor = .secondaryLabel
-                cell.textLabel?.textAlignment = .center
-                cell.selectionStyle = .none
-                return cell
-            }
-            
             if messageID == Constants.errorPlaceholder {
                 let cell = UITableViewCell()
                 cell.textLabel?.text = Constants.errorPlaceholderText
@@ -210,24 +202,157 @@ class OAChatViewController: UIViewController {
     }
 
     private func setupBindings() {
-        chatDataManager.$viewState
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                self?.updateUI(for: state)
-            }
-            .store(in: &cancellables)
-        
-        chatDataManager.$selectedModel
-            .sink { [weak self] value in
-                guard let self = self, OAPlatform.isMacCatalyst else { return }
-                if let button = self.navigationItem.rightBarButtonItem {
-                    self.currentlySelectedModel = value
-                    button.menu = self.makeModelSelectionMenu()
-                }
-            }
-            .store(in: &cancellables)
+        startObservation()
     }
     
+    private func startObservation() {
+        observationTask = Task { @MainActor in
+            // Create a throttled observation sequence
+            let observationStream = createThrottledObservationStream()
+            
+            for await change in observationStream {
+                guard !Task.isCancelled else { break }
+                
+                switch change {
+                case .viewStateChanged(let newState):
+                    updateUI(for: newState)
+                case .modelChanged:
+                    updateModelSelection()
+                case .combined(let newState):
+                    updateUI(for: newState)
+                    updateModelSelection()
+                }
+            }
+        }
+    }
+    
+    private enum ObservationChange {
+        case viewStateChanged(ChatViewState)
+        case modelChanged
+        case combined(ChatViewState)
+    }
+    
+    private func createThrottledObservationStream() -> AsyncStream<ObservationChange> {
+        AsyncStream { continuation in
+            let task = Task { @MainActor in
+                var lastViewState = chatDataManager.viewState
+                var lastModel = chatDataManager.selectedModel
+                var lastUpdateTime = Date()
+                let throttleInterval: TimeInterval = 0.05 // 50ms for better responsiveness
+                
+                while !Task.isCancelled {
+                    withObservationTracking {
+                        // Access observable properties to register for changes
+                        _ = chatDataManager.viewState
+                        _ = chatDataManager.selectedModel
+                    } onChange: {
+                        Task { @MainActor in
+                            guard !Task.isCancelled else { return }
+                            
+                            let currentTime = Date()
+                            let timeSinceLastUpdate = currentTime.timeIntervalSince(lastUpdateTime)
+                            
+                            // Collect current values
+                            let currentViewState = self.chatDataManager.viewState
+                            let currentModel = self.chatDataManager.selectedModel
+                            
+                            // Determine what changed
+                            let viewStateChanged = !self.isSameViewState(lastViewState, currentViewState)
+                            let modelChanged = lastModel != currentModel
+                            
+                            // Apply throttling only for rapid view state updates (like streaming)
+                            let shouldThrottle = viewStateChanged && 
+                                               timeSinceLastUpdate < throttleInterval &&
+                                               self.isStreamingUpdate(from: lastViewState, to: currentViewState)
+                            
+                            if !shouldThrottle {
+                                // Emit appropriate change event
+                                if viewStateChanged && modelChanged {
+                                    continuation.yield(.combined(currentViewState))
+                                } else if viewStateChanged {
+                                    continuation.yield(.viewStateChanged(currentViewState))
+                                } else if modelChanged {
+                                    continuation.yield(.modelChanged)
+                                }
+                                
+                                // Update tracking variables
+                                lastViewState = currentViewState
+                                lastModel = currentModel
+                                lastUpdateTime = currentTime
+                            }
+                        }
+                    }
+                    
+                    // Adaptive sleep based on current activity
+                    let sleepInterval = self.isHighActivityPeriod() ? 16_000_000 : 50_000_000 // 16ms vs 50ms
+                    try? await Task.sleep(nanoseconds: UInt64(sleepInterval))
+                }
+            }
+            
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
+        }
+    }
+    
+    private func isSameViewState(_ lhs: ChatViewState, _ rhs: ChatViewState) -> Bool {
+        switch (lhs, rhs) {
+        case (.empty, .empty):
+            return true
+        case (.loading, .loading):
+            return true
+        case (.error(let lhsMsg), .error(let rhsMsg)):
+            return lhsMsg == rhsMsg
+        case (.chat(let lhsId, let lhsMessages, let lhsReconfig, let lhsStreaming), 
+              .chat(let rhsId, let rhsMessages, let rhsReconfig, let rhsStreaming)):
+            // Check basic properties first
+            guard lhsId == rhsId && 
+                  lhsReconfig == rhsReconfig &&
+                  lhsStreaming == rhsStreaming &&
+                  lhsMessages.count == rhsMessages.count else {
+                return false
+            }
+            
+            // Compare actual message content to detect streaming updates
+            for (lhsMsg, rhsMsg) in zip(lhsMessages, rhsMessages) {
+                if lhsMsg.id != rhsMsg.id || 
+                   lhsMsg.content != rhsMsg.content ||
+                   lhsMsg.role != rhsMsg.role {
+                    return false
+                }
+            }
+            
+            return true
+        default:
+            return false
+        }
+    }
+    
+    private func isStreamingUpdate(from: ChatViewState, to: ChatViewState) -> Bool {
+        switch (from, to) {
+        case (.chat(_, _, _, true), .chat(_, _, _, true)):
+            return true // Both are streaming states
+        default:
+            return false
+        }
+    }
+    
+    private func isHighActivityPeriod() -> Bool {
+        // Check if we're currently in a streaming state
+        if case .chat(_, _, _, let isStreaming) = chatDataManager.viewState {
+            return isStreaming
+        }
+        return false
+    }
+    
+    private func updateModelSelection() {
+        currentlySelectedModel = chatDataManager.selectedModel
+        guard OAPlatform.isMacCatalyst,
+              let button = navigationItem.rightBarButtonItem else { return }
+        button.menu = makeModelSelectionMenu()
+    }
+
+    @MainActor
     private func updateUI(for state: ChatViewState) {
         switch state {
         case .empty:
@@ -243,14 +368,24 @@ class OAChatViewController: UIViewController {
                 inputField.placeholder = Constants.streamingPlacerholderText
             } else {
                 inputField.isEnabled = true
-                inputField.placeholder = "Type a message..."
+                inputField.placeholder = Constants.loadedPlaceholderText
             }
         case .loading:
-            break
+            updateSnapshot(for: .empty)
+            inputField.isEnabled = false
+            inputField.text = ""
+            inputField.placeholder = Constants.emptyPlaceholerText
 
         case .error(let message):
-            inputField.isEnabled = false
-            inputField.placeholder = "Error: \(message)"
+            let alert = UIAlertController(title: "Streaming Error", message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+            self.present(alert, animated: true, completion: nil)
+
+            // TODO: when a streaming error happens, don't remove previous message. figure outnew error state UI.
+//            updateSnapshot(for: .error(message))
+            inputField.isEnabled = true
+            inputField.placeholder = Constants.loadedPlaceholderText
+
         }
     }
     
@@ -263,8 +398,6 @@ class OAChatViewController: UIViewController {
             snapshot.appendItems([Constants.emptyPlaceholder])
 
         case .chat(_, let messages, let reconfiguringMessageID, _):
-            // NOTE: is isStreaming == true, update tableView here.
-
             let messageIDs = messages.map { $0.id }
             snapshot.appendItems(messageIDs)
             
@@ -274,7 +407,7 @@ class OAChatViewController: UIViewController {
             }
             
         case .loading:
-            snapshot.appendItems([Constants.loadingPlaceholder])
+            snapshot.appendItems([Constants.emptyPlaceholder])
 
         case .error:
             snapshot.appendItems([Constants.errorPlaceholder])
@@ -307,7 +440,7 @@ class OAChatViewController: UIViewController {
     }
 
     func loadChat(with id: String) async {
-        await self.chatDataManager.saveProvisionaryTextInput(self.inputField.text)
+        await self.chatDataManager.saveProvisionalTextInput(self.inputField.text)
         if let chat = await self.chatDataManager.loadChat(with: id) {
             self.inputField.text = chat.provisionaryInputText
         }
