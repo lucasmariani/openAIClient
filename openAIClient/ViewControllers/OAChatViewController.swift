@@ -62,18 +62,18 @@ class OAChatViewController: UIViewController {
         self.setupNavBar()
         self.chatDataManager.loadLatestChat()
 
-        setupBindings()
+        startObservation()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         setupKeyboardObservers()
+
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         removeKeyboardObservers()
-        observationTask?.cancel()
     }
 
     private func setupNavBar() {
@@ -199,10 +199,6 @@ class OAChatViewController: UIViewController {
             return cell
         }
         self.tableView.dataSource = self.dataSource
-    }
-
-    private func setupBindings() {
-        startObservation()
     }
     
     private func startObservation() {
@@ -358,21 +354,25 @@ class OAChatViewController: UIViewController {
         case .empty:
             updateSnapshot(for: .empty)
             inputField.isEnabled = false
+            sendButton.isEnabled = false
             inputField.text = ""
             inputField.placeholder = Constants.emptyPlaceholerText
 
         case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
             updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
             if isStreaming {
+                sendButton.isEnabled = false
                 inputField.isEnabled = false
                 inputField.placeholder = Constants.streamingPlacerholderText
             } else {
+                sendButton.isEnabled = true
                 inputField.isEnabled = true
                 inputField.placeholder = Constants.loadedPlaceholderText
             }
         case .loading:
             updateSnapshot(for: .empty)
             inputField.isEnabled = false
+            sendButton.isEnabled = false
             inputField.text = ""
             inputField.placeholder = Constants.emptyPlaceholerText
 
@@ -384,8 +384,8 @@ class OAChatViewController: UIViewController {
             // TODO: when a streaming error happens, don't remove previous message. figure outnew error state UI.
 //            updateSnapshot(for: .error(message))
             inputField.isEnabled = true
+            sendButton.isEnabled = true
             inputField.placeholder = Constants.loadedPlaceholderText
-
         }
     }
     
@@ -440,9 +440,13 @@ class OAChatViewController: UIViewController {
     }
 
     func loadChat(with id: String) async {
+        print("Debug: OAChatViewController loadChat called with ID: \(id)")
         await self.chatDataManager.saveProvisionalTextInput(self.inputField.text)
         if let chat = await self.chatDataManager.loadChat(with: id) {
+            print("Debug: Successfully loaded chat: \(chat.title)")
             self.inputField.text = chat.provisionaryInputText
+        } else {
+            print("Debug: Failed to load chat with ID: \(id)")
         }
     }
     

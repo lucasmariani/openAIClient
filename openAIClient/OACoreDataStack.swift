@@ -53,7 +53,6 @@ final class OACoreDataStack: Sendable {
                 print("Core Data error: \(error), \(error.userInfo)")
                 fatalError("Unresolved error: \(error), \(error.userInfo)")
             }
-            print("✅ Core Data store loaded: \(storeDescription)")
         }
         
         // Configure main context for optimal performance

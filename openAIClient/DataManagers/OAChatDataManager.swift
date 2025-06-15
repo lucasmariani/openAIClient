@@ -117,8 +117,16 @@ final class OAChatDataManager {
             }
             
         case .chatsUpdated(let updatedChats):
-            print("📋 DataManager: chatsUpdated with \(updatedChats.count) chats")
             chats = updatedChats
+            
+            // Check if currently selected chat was deleted during sync (e.g., CloudKit remote changes)
+            if let currentChatId = currentChatId {
+                let stillExists = updatedChats.contains { $0.id == currentChatId }
+                if !stillExists {
+                    print("📋 DataManager: Currently selected chat \(currentChatId) was deleted during sync, clearing current chat")
+                    clearCurrentChat()
+                }
+            }
 
         case .chatCreated:
             break

@@ -68,7 +68,10 @@ class OASidebarViewController: UIViewController {
             primaryAction: UIAction { [weak self] _ in
                 Task {
                     await self?.addNewChat()
-                    self?.selectLatestChat()
+                    // Wait a bit to ensure data source is updated before selecting
+                    await MainActor.run {
+                        self?.selectLatestChat()
+                    }
                 }
             }
         )
@@ -409,6 +412,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
 
         switch item {
         case .chat(let chat):
+            print("Debug: Selected chat with ID: \(chat.id), title: \(chat.title)")
             Task {
                 let detailNav = splitViewController?.viewController(for: .secondary) as? UINavigationController
                 let chatVC = detailNav?.topViewController as? OAChatViewController
