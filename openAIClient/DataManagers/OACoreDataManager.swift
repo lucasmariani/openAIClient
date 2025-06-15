@@ -5,99 +5,119 @@
 //  Created by Lucas on 16.05.25.
 //
 
-import CoreData
+@preconcurrency import CoreData
 import Observation
 
 // MARK: - Core Data Change Delegate
 
 @MainActor
-protocol OACoreDataManagerDelegate: AnyObject {
+protocol OACoreDataManagerDelegate: AnyObject, Sendable {
     func coreDataManagerDidUpdateChats(_ chats: [OAChat])
 }
 
-final class OACoreDataManager: @unchecked Sendable {
+// MARK: - Core Data Manager with Swift 6 Strict Concurrency
 
+@CoreDataActor
+final class OACoreDataManager {
+
+    // Thread-safe storage for chats - only accessed from CoreDataActor
     private var chats: [OAChat] = []
-    weak var delegate: OACoreDataManagerDelegate?
+    
+    // Delegate must be accessed through MainActor boundary
+    private weak var _delegate: (any OACoreDataManagerDelegate)?
     
     // MARK: - Public Access
     
+    /// Returns current chats - safe to call from CoreDataActor
     func getCurrentChats() -> [OAChat] {
         return chats
     }
-
-    private let backgroundContext: NSManagedObjectContext
+    
+    /// Sets delegate with proper MainActor isolation
+    func setDelegate(_ delegate: (any OACoreDataManagerDelegate)?) {
+        _delegate = delegate
+    }
 
     init() {
-        backgroundContext = OACoreDataStack.shared.container.newBackgroundContext()
-        backgroundContext.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
         Task {
             try? await self.fetchPersistedChats()
         }
         
         // Listen for CloudKit remote changes
+        // Use unowned self to break reference cycle and avoid capture issues
         NotificationCenter.default.addObserver(
             forName: .cloudKitDataChanged,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [unowned self] _ in
             Task {
-                await self?.handleRemoteChanges()
+                await self.handleRemoteChanges()
             }
         }
     }
 
     func fetchPersistedChats() async throws {
-        // Use modern background task pattern
-        let fetchedChats = try await OACoreDataStack.shared.performBackgroundTask { context in
+        // Use the new CoreDataActor operation pattern
+        let fetchedChats = try await CoreDataActor.performOperation { context in
             let req: NSFetchRequest<Chat> = Chat.fetchRequest()
             req.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
             let chats = try context.fetch(req)
             return chats.compactMap { OAChat(chat: $0) }
         }
         
+        // Update local state within CoreDataActor
+        let uniqueChats = Dictionary(fetchedChats.map { ($0.id, $0) }, uniquingKeysWith: { latest, _ in latest })
+        self.chats = Array(uniqueChats.values).sorted { $0.date > $1.date }
+        
+        // Notify delegate on MainActor with proper isolation
+        await self.notifyDelegateOfChatUpdate()
+    }
+    
+    /// Helper to properly transfer delegate calls to MainActor
+    private func notifyDelegateOfChatUpdate() async {
+        let currentChats = self.chats
+        let delegate = self._delegate
+        
         await MainActor.run {
-            // Deduplicate chats by ID to handle CloudKit sync duplicates
-            let uniqueChats = Dictionary(fetchedChats.map { ($0.id, $0) }, uniquingKeysWith: { latest, _ in latest })
-            self.chats = Array(uniqueChats.values).sorted { $0.date > $1.date }
-            self.delegate?.coreDataManagerDidUpdateChats(self.chats)
+            delegate?.coreDataManagerDidUpdateChats(currentChats)
         }
     }
 
     func newChat() async throws {
         let chatDate = Date.now
+        let formattedTimestamp = Self.formatChatTimestamp(chatDate)
         
-        // Use modern background task pattern with automatic save
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        // Use new CoreDataActor operation pattern
+        try await CoreDataActor.performOperation { context in
             let chat = Chat(context: context)
             chat.id = UUID().uuidString
             chat.date = chatDate
-            chat.title = "New Chat \(Self.formatChatTimestamp(chatDate))"
-            // Save is handled automatically by performBackgroundTask
+            chat.title = "New Chat \(formattedTimestamp)"
+            return () // Explicit return for Sendable compliance
         }
         
         // Refresh chats after creation
         try await fetchPersistedChats()
     }
     
-    private static func formatChatTimestamp(_ date: Date) -> String {
+    nonisolated private static func formatChatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, h:mm a"
         return formatter.string(from: date)
     }
 
     func deleteChat(with id: String) async throws {
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
             fetchRequest.fetchLimit = 1
 
-            guard let chatManagedObject = try self.backgroundContext.fetch(fetchRequest).first else {
+            guard let chatManagedObject = try context.fetch(fetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: id, operation: "deleteChat")
             }
             
-            self.backgroundContext.delete(chatManagedObject)
-            try self.backgroundContext.save()
+            context.delete(chatManagedObject)
+            return () // Explicit return for Sendable compliance
         }
         // Refresh chats after deletion
         try await fetchPersistedChats()
@@ -120,12 +140,12 @@ final class OACoreDataManager: @unchecked Sendable {
     }
 
     func fetchMessages(for chatID: String) async throws -> [OAChatMessage] {
-        try await backgroundContext.perform {
+        return try await CoreDataActor.performOperation { context in
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             chatFetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
+            guard let chatMO = try context.fetch(chatFetchRequest).first else {
                     throw StructuredError.chatNotFound(chatId: chatID, operation: "fetchMessages")
             }
 
@@ -137,7 +157,7 @@ final class OACoreDataManager: @unchecked Sendable {
                 NSSortDescriptor(key: "date", ascending: true)
             ]
 
-            let messageMOs = try self.backgroundContext.fetch(messageFetchRequest)
+            let messageMOs = try context.fetch(messageFetchRequest)
 
             let sortedMessages = messageMOs.compactMap {
                 let message = OAChatMessage(message: $0)
@@ -149,12 +169,12 @@ final class OACoreDataManager: @unchecked Sendable {
     }
 
     func updateMessage(with chatMessage: OAResponseMessage, chatId: String, isStreaming: Bool? = nil) async throws {
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             chatFetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
+            guard let chatMO = try context.fetch(chatFetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: chatId, operation: "updateMessage")
             }
 
@@ -176,23 +196,23 @@ final class OACoreDataManager: @unchecked Sendable {
             // Update the chat's date to reflect the latest message activity
             chatMO.date = chatMessage.timestamp
 
-            try self.backgroundContext.save()
+            return () // Explicit return for Sendable compliance
         }
     }
 
     func saveMessage(_ message: OAChatMessage, toChatID chatID: String, isStreaming: Bool = false) async throws {
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             // Fetch the Chat Managed Object
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             chatFetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(chatFetchRequest).first else {
+            guard let chatMO = try context.fetch(chatFetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: chatID, operation: "addMessage")
             }
 
             // Create new Message Managed Object
-            let messageMO = Message(context: self.backgroundContext)
+            let messageMO = Message(context: context)
             messageMO.id = message.id
             messageMO.role = message.role.rawValue
             messageMO.content = message.content
@@ -206,60 +226,59 @@ final class OACoreDataManager: @unchecked Sendable {
             // Update the chat's main date to the new message's date
             chatMO.date = message.date
 
-            try self.backgroundContext.save()
+            return () // Explicit return for Sendable compliance
         }
     }
 
     func updateProvisionalInputText(for chatID: String, text: String?) async throws {
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             fetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+            guard let chatMO = try context.fetch(fetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: chatID, operation: "updateProvisionaryInputText")
             }
 
             chatMO.provisionaryInputText = text
-            try self.backgroundContext.save()
+            return () // Explicit return for Sendable compliance
         }
     }
 
     func updateSelectedModelFor(_ chatId: String?, model: OAModel) async throws {
         guard let chatId else { return }
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             fetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+            guard let chatMO = try context.fetch(fetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: chatId, operation: "updateSelectedModelFor")
             }
 
             chatMO.selectedModel = model.value
-            try self.backgroundContext.save()
+            return () // Explicit return for Sendable compliance
         }
     }
 
     func updateChatTitle(_ chatId: String, title: String) async throws {
-        try await backgroundContext.perform {
+        try await CoreDataActor.performOperation { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             fetchRequest.fetchLimit = 1
 
-            guard let chatMO = try self.backgroundContext.fetch(fetchRequest).first else {
+            guard let chatMO = try context.fetch(fetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: chatId, operation: "updateChatTitle")
             }
 
             chatMO.title = title
-            try self.backgroundContext.save()
+            return () // Explicit return for Sendable compliance
         }
         try await fetchPersistedChats()
     }
     
     // MARK: - Sync Methods
     
-    @MainActor
     private func handleRemoteChanges() async {
         do {
             try await self.fetchPersistedChats()

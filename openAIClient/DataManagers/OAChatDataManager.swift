@@ -15,6 +15,12 @@ enum ChatViewState {
     case error(String)
 }
 
+// UI Events emitted by ChatDataManager
+enum ChatUIEvent {
+    case viewStateChanged(ChatViewState)
+    case modelChanged(OAModel)
+}
+
 @MainActor
 @Observable
 final class OAChatDataManager {
@@ -32,13 +38,27 @@ final class OAChatDataManager {
 
     private var eventTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
+    
+    // UI Event Stream - for complex state changes
+    private let uiEventContinuation: AsyncStream<ChatUIEvent>.Continuation
+    let uiEventStream: AsyncStream<ChatUIEvent>
 
     // MARK: - Initialization
     
     init(repository: ChatRepository) {
         self.repository = repository
+        
+        // Setup UI Event Stream
+        let (stream, continuation) = AsyncStream<ChatUIEvent>.makeStream()
+        self.uiEventStream = stream
+        self.uiEventContinuation = continuation
+        
         setupEventHandling()
         loadInitialChats()
+    }
+    
+    deinit {
+        uiEventContinuation.finish()
     }
     
     private func loadInitialChats() {
@@ -46,7 +66,9 @@ final class OAChatDataManager {
             do {
                 chats = try await repository.getChats()
                 if chats.isEmpty {
-                    viewState = .empty
+                    let newViewState = ChatViewState.empty
+                    viewState = newViewState
+                    uiEventContinuation.yield(.viewStateChanged(newViewState))
                 }
             } catch {
                 print("Failed to load initial chats: \(error)")
@@ -68,21 +90,27 @@ final class OAChatDataManager {
     private func handleRepositoryEvent(_ event: ChatEvent) {
         switch event {
         case .messageStarted(let chatId, let message):
-            print("📩 DataManager: messageStarted for chat \(chatId), message \(message.id)")
+//            print("📩 DataManager: messageStarted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
                 messages.append(message)
-                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
-                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+                print("viewState will update - chatDataManager")
+                viewState = newViewState
+                uiEventContinuation.yield(.viewStateChanged(newViewState))
+//                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
             } else {
                 print("📩 DataManager: Ignoring messageStarted for different chat (current: \(currentChatId ?? "none"))")
             }
             
         case .messageUpdated(let chatId, let message):
-            print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
+//            print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
-                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
+                print("viewState will update - chatDataManager")
+                viewState = newViewState
+                uiEventContinuation.yield(.viewStateChanged(newViewState))
+//                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
             } else {
                 print("📝 DataManager: Ignoring messageUpdated for different chat (current: \(currentChatId ?? "none"))")
             }
@@ -91,9 +119,11 @@ final class OAChatDataManager {
             print("✅ DataManager: messageCompleted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
-                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: false)
-                print("📊 DataManager: Updated viewState to non-streaming with \(messages.count) messages")
-                
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: false)
+                print("📊 DataManager: messageCompleted. Updated viewState to non-streaming with \(messages.count) messages")
+                print("viewState will update - chatDataManager")
+                viewState = newViewState
+                uiEventContinuation.yield(.viewStateChanged(newViewState))
                 // Generate title after first assistant response
                 if message.role == .assistant && shouldGenerateTitle() {
                     Task {
@@ -139,7 +169,7 @@ final class OAChatDataManager {
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             let oldContent = messages[index].content
             messages[index] = message
-            print("🔄 DataManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
+//            print("🔄 DataManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
         } else {
             print("⚠️ DataManager: Could not find message with ID \(message.id) in local array of \(messages.count) messages")
             print("⚠️ DataManager: Available message IDs: \(messages.map { $0.id })")
@@ -149,7 +179,9 @@ final class OAChatDataManager {
     private func clearCurrentChat() {
         currentChatId = nil
         messages = []
-        viewState = .empty
+        let newViewState = ChatViewState.empty
+        viewState = newViewState
+        uiEventContinuation.yield(.viewStateChanged(newViewState))
     }
     
     private func shouldGenerateTitle() -> Bool {
@@ -192,6 +224,7 @@ final class OAChatDataManager {
         do {
             try await repository.updateChatModel(chatId, model: model)
             selectedModel = model
+            uiEventContinuation.yield(.modelChanged(model))
         } catch {
             print("Failed to update model: \(error)")
         }
@@ -216,13 +249,24 @@ final class OAChatDataManager {
             
             currentChatId = id
             messages = try await repository.getMessages(for: id)
+            let oldModel = selectedModel
             selectedModel = chat.selectedModel
             
             if let chatId = currentChatId {
-                viewState = .chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
+                viewState = newViewState
+                uiEventContinuation.yield(.viewStateChanged(newViewState))
             } else {
-                viewState = .empty
+                let newViewState = ChatViewState.empty
+                viewState = newViewState
+                uiEventContinuation.yield(.viewStateChanged(newViewState))
             }
+            
+            // Emit model change event if model changed
+            if oldModel != selectedModel {
+                uiEventContinuation.yield(.modelChanged(selectedModel))
+            }
+            
             return chat
             
         } catch {
@@ -238,23 +282,27 @@ final class OAChatDataManager {
 
         // Optimistically add user message to UI
         messages.append(chatMessage)
-        viewState = .chat(id: currentChatId, messages: messages, reconfiguringMessageID: chatMessage.id, isStreaming: true)
+        let newViewState = ChatViewState.chat(id: currentChatId, messages: messages, reconfiguringMessageID: chatMessage.id, isStreaming: true)
+        viewState = newViewState
+        uiEventContinuation.yield(.viewStateChanged(newViewState))
 
         Task {
             do {
                 // Save user message
                 try await repository.saveMessage(chatMessage, toChatId: currentChatId)
                 
-                // Start streaming assistant response
+                // Start streaming assistant response - events flow through main eventStream
                 streamingTask?.cancel()
                 streamingTask = Task {
-                    for await _ in repository.streamMessageEvents(
-                        content: chatMessage.content,
-                        chatId: currentChatId,
-                        model: selectedModel
-                    ) {
-                        // Events are handled through the event system via handleRepositoryEvent()
-                        // This loop just keeps the task alive until streaming completes
+                    do {
+                        try await repository.startStreaming(
+                            content: chatMessage.content,
+                            chatId: currentChatId,
+                            model: selectedModel
+                        )
+                        print("🏁 DataManager: Streaming task started successfully")
+                    } catch {
+                        print("❌ DataManager: Failed to start streaming: \(error)")
                     }
                 }
                 

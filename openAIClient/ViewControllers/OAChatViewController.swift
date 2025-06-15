@@ -49,6 +49,7 @@ class OAChatViewController: UIViewController {
     required init?(coder: NSCoder) { fatalError() }
     
     deinit {
+        print("chatVC deinit called")
         observationTask?.cancel()
     }
 
@@ -202,97 +203,25 @@ class OAChatViewController: UIViewController {
     }
     
     private func startObservation() {
+        print("chatVC startObservation called")
+        observationTask?.cancel()
         observationTask = Task { @MainActor in
-            // Create a throttled observation sequence
-            let observationStream = createThrottledObservationStream()
-            
-            for await change in observationStream {
+            // Use the clean AsyncStream from ChatDataManager
+            for await event in chatDataManager.uiEventStream {
                 guard !Task.isCancelled else { break }
                 
-                switch change {
+                switch event {
                 case .viewStateChanged(let newState):
+                    print("𝌡 chatVC viewStateChanged via AsyncStream")
                     updateUI(for: newState)
                 case .modelChanged:
-                    updateModelSelection()
-                case .combined(let newState):
-                    updateUI(for: newState)
+                    print("𝌡 chatVC modelChanged via AsyncStream")
                     updateModelSelection()
                 }
             }
         }
     }
     
-    private enum ObservationChange {
-        case viewStateChanged(ChatViewState)
-        case modelChanged
-        case combined(ChatViewState)
-    }
-    
-    private func createThrottledObservationStream() -> AsyncStream<ObservationChange> {
-        AsyncStream { continuation in
-            let task = Task { @MainActor in
-                var lastViewState = chatDataManager.viewState
-                var lastModel = chatDataManager.selectedModel
-                var lastUpdateTime = Date()
-                let throttleInterval: TimeInterval = 0.05 // 50ms for better responsiveness
-                
-                while !Task.isCancelled {
-                    withObservationTracking {
-                        // Access observable properties to register for changes
-                        _ = chatDataManager.viewState
-                        _ = chatDataManager.selectedModel
-                    } onChange: {
-                        Task { @MainActor in
-                            guard !Task.isCancelled else { return }
-                            
-                            let currentTime = Date()
-                            let timeSinceLastUpdate = currentTime.timeIntervalSince(lastUpdateTime)
-                            
-                            // Collect current values
-                            let currentViewState = self.chatDataManager.viewState
-                            let currentModel = self.chatDataManager.selectedModel
-                            
-                            // Determine what changed
-                            let viewStateChanged = !self.isSameViewState(lastViewState, currentViewState)
-                            let modelChanged = lastModel != currentModel
-                            
-                            // Apply throttling only for rapid view state updates (like streaming)
-                            // NEVER throttle completion events (streaming -> non-streaming)
-                            let isCompletionEvent = self.isStreamingCompletionEvent(from: lastViewState, to: currentViewState)
-                            let shouldThrottle = viewStateChanged && 
-                                               timeSinceLastUpdate < throttleInterval &&
-                                               self.isStreamingUpdate(from: lastViewState, to: currentViewState) &&
-                                               !isCompletionEvent
-                            
-                            if !shouldThrottle {
-                                // Emit appropriate change event
-                                if viewStateChanged && modelChanged {
-                                    continuation.yield(.combined(currentViewState))
-                                } else if viewStateChanged {
-                                    continuation.yield(.viewStateChanged(currentViewState))
-                                } else if modelChanged {
-                                    continuation.yield(.modelChanged)
-                                }
-                                
-                                // Update tracking variables
-                                lastViewState = currentViewState
-                                lastModel = currentModel
-                                lastUpdateTime = currentTime
-                            }
-                        }
-                    }
-                    
-                    // Adaptive sleep based on current activity
-                    let sleepInterval = self.isHighActivityPeriod() ? 16_000_000 : 50_000_000 // 16ms vs 50ms
-                    try? await Task.sleep(nanoseconds: UInt64(sleepInterval))
-                }
-            }
-            
-            continuation.onTermination = { _ in
-                task.cancel()
-            }
-        }
-    }
 
     @MainActor
     private func updateUI(for state: ChatViewState) {
@@ -305,6 +234,11 @@ class OAChatViewController: UIViewController {
             inputField.placeholder = Constants.emptyPlaceholerText
 
         case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
+            if !isStreaming {
+                print("🎏 chatVC updateUI called. isStreaming: FALSE")
+            } else {
+                print("🐖 chatVC updateUI called. isStreaming: TRUE")
+            }
             updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
             sendButton.isEnabled = !isStreaming
             inputField.isEnabled = !isStreaming
@@ -331,64 +265,6 @@ class OAChatViewController: UIViewController {
         }
     }
 
-    private func isSameViewState(_ lhs: ChatViewState, _ rhs: ChatViewState) -> Bool {
-        switch (lhs, rhs) {
-        case (.empty, .empty):
-            return true
-        case (.loading, .loading):
-            return true
-        case (.error(let lhsMsg), .error(let rhsMsg)):
-            return lhsMsg == rhsMsg
-        case (.chat(let lhsId, let lhsMessages, let lhsReconfig, let lhsStreaming), 
-              .chat(let rhsId, let rhsMessages, let rhsReconfig, let rhsStreaming)):
-            // Check basic properties first
-            guard lhsId == rhsId && 
-                  lhsReconfig == rhsReconfig &&
-                  lhsStreaming == rhsStreaming &&
-                  lhsMessages.count == rhsMessages.count else {
-                return false
-            }
-            
-            // Compare actual message content to detect streaming updates
-            for (lhsMsg, rhsMsg) in zip(lhsMessages, rhsMessages) {
-                if lhsMsg.id != rhsMsg.id || 
-                   lhsMsg.content != rhsMsg.content ||
-                   lhsMsg.role != rhsMsg.role {
-                    return false
-                }
-            }
-            
-            return true
-        default:
-            return false
-        }
-    }
-    
-    private func isStreamingUpdate(from: ChatViewState, to: ChatViewState) -> Bool {
-        switch (from, to) {
-        case (.chat(_, _, _, true), .chat(_, _, _, true)):
-            return true // Both are streaming states
-        default:
-            return false
-        }
-    }
-    
-    private func isStreamingCompletionEvent(from: ChatViewState, to: ChatViewState) -> Bool {
-        switch (from, to) {
-        case (.chat(_, _, _, true), .chat(_, _, _, false)):
-            return true // Streaming completion event - never throttle this
-        default:
-            return false
-        }
-    }
-    
-    private func isHighActivityPeriod() -> Bool {
-        // Check if we're currently in a streaming state
-        if case .chat(_, _, _, let isStreaming) = chatDataManager.viewState {
-            return isStreaming
-        }
-        return false
-    }
     
     private func updateModelSelection() {
         currentlySelectedModel = chatDataManager.selectedModel
@@ -438,7 +314,7 @@ class OAChatViewController: UIViewController {
     private func scrollToBottomIfNeeded() {
         guard case .chat(_, let messages, _, _) = chatDataManager.viewState, !messages.isEmpty else { return }
 
-        DispatchQueue.main.async {
+        Task { @MainActor in
             let lastIndexPath = IndexPath(item: messages.count - 1, section: 0)
             if self.tableView.numberOfSections > 0 && 
                self.tableView.numberOfRows(inSection: 0) > lastIndexPath.row {

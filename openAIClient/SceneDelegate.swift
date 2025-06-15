@@ -28,33 +28,37 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         splitViewController.preferredSplitBehavior = .automatic
         splitViewController.displayModeButtonVisibility = .automatic
 
-        let coreDataManager = OACoreDataManager()
-        
-        // Create single repository instance shared by both components
-        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
-            fatalError("Error retrieving API_KEY")
+        // Initialize CoreData manager asynchronously
+        Task {
+            let coreDataManager = await OACoreDataManager()
+            
+            // Create single repository instance shared by both components
+            guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
+                fatalError("Error retrieving API_KEY")
+            }
+            let configuration = URLSessionConfiguration.default
+            let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
+            let streamProvider = OAResponseStreamProvider(service: service, model: .gpt41nano)
+            let repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
+            
+            await MainActor.run {
+                let chatDataManager = OAChatDataManager(repository: repository)
+                
+                // Store references for lifecycle management
+                self.coreDataManager = coreDataManager
+                self.chatDataManager = chatDataManager
+                self.repository = repository
+
+                let sidebar = OASidebarViewController(chatDataManager: chatDataManager)
+                let sidebarNav = UINavigationController(rootViewController: sidebar)
+
+                let chatVC = OAChatViewController(chatDataManager: chatDataManager)
+                let detailNav = UINavigationController(rootViewController: chatVC)
+
+                splitViewController.setViewController(sidebarNav, for: .primary)
+                splitViewController.setViewController(detailNav, for: .secondary)
+            }
         }
-        let configuration = URLSessionConfiguration.default
-        let service = OAOpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
-        let streamProvider = OAResponseStreamProvider(service: service, model: .gpt41nano)
-        let repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamProvider: streamProvider)
-        
-        let chatDataManager = OAChatDataManager(repository: repository)
-        
-        // Store references for lifecycle management
-        self.coreDataManager = coreDataManager
-        self.chatDataManager = chatDataManager
-        self.repository = repository
-
-        let sidebar = OASidebarViewController(chatDataManager: chatDataManager)
-        let sidebarNav = UINavigationController(rootViewController: sidebar)
-
-        let chatVC = OAChatViewController(chatDataManager: chatDataManager)
-        let detailNav = UINavigationController(rootViewController: chatVC)
-
-        splitViewController.setViewController(sidebarNav, for: .primary)
-        splitViewController.setViewController(detailNav, for: .secondary)
-
 
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = splitViewController
@@ -91,7 +95,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         
         // Check for CloudKit updates when returning to foreground
         Task {
-            try? await coreDataManager?.fetchPersistedChats()
+            if let coreDataManager = coreDataManager {
+                try? await coreDataManager.fetchPersistedChats()
+            }
         }
     }
 
