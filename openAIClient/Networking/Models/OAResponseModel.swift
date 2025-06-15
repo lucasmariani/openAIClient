@@ -130,16 +130,6 @@ public struct OAResponseModel: Decodable, Sendable {
   /// Configuration options for a text response from the model.
   public let text: OATextConfiguration
 
-//  /// How the model should select which tool (or tools) to use when generating a response.
-//  /// See the tools parameter to see how to specify which tools the model can call.
-//  public let toolChoice: ToolChoiceMode
-//
-//  /// An array of tools the model may call while generating a response. You can specify which tool to use by setting the tool_choice parameter.
-//  /// The two categories of tools you can provide the model are:
-//  /// Built-in tools: Tools that are provided by OpenAI that extend the model's capabilities, like [web search](https://platform.openai.com/docs/guides/tools-web-search) or [file search](https://platform.openai.com/docs/guides/tools-file-search0. Learn more about [built-in tools](https://platform.openai.com/docs/guides/tools).
-//  /// Function calls (custom tools): Functions that are defined by you, enabling the model to call your own code. Learn more about [function calling.](https://platform.openai.com/docs/guides/function-calling)
-//  public let tools: [Tool]
-
   /// An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass.
   /// So 0.1 means only the tokens comprising the top 10% probability mass are considered.
   /// We generally recommend altering this or temperature but not both.
@@ -190,8 +180,6 @@ public struct OAResponseModel: Decodable, Sendable {
     case store
     case temperature
     case text
-//    case toolChoice = "tool_choice"
-//    case tools
     case topP = "top_p"
     case truncation
     case usage

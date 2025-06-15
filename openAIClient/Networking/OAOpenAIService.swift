@@ -202,16 +202,6 @@ extension OAOpenAIService {
         }
         guard httpResponse.statusCode == 200 else {
             let errorMessage = "status code \(httpResponse.statusCode)"
-//            do {
-//                let data = try await data.reduce(into: Data()) { data, byte in
-//                    data.append(byte)
-//                }
-//                let error = try decoder.decode(OAOpenAIErrorResponse.self, from: data)
-//                errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
-//            } catch {
-//                // If decoding fails, proceed with a general error message
-//                errorMessage = "status code \(httpResponse.statusCode)"
-//            }
             throw APIError.responseUnsuccessful(
                 description: errorMessage,
                 statusCode: httpResponse.statusCode)

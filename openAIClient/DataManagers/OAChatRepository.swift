@@ -96,9 +96,7 @@ final class OAChatRepositoryImpl: ChatRepository {
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
             let streamEvents = streamProvider.streamEvents(for: content)
-//            do {
-
-                for await event in streamEvents {
+            for await event in streamEvents {
                     guard !Task.isCancelled else { break }
 
                     switch event {
@@ -180,14 +178,6 @@ final class OAChatRepositoryImpl: ChatRepository {
                         eventContinuation.yield(.streamingError(chatId: chatId, error: structuredError))
                     }
                 }
-//            } catch {
-//                let structuredError = StructuredError.streamingFailed(
-//                    chatId: chatId,
-//                    phase: "startStreaming",
-//                    underlyingError: error
-//                )
-//                eventContinuation.yield(.streamingError(chatId: chatId, error: structuredError))
-//            }
         }
     }
 

@@ -132,20 +132,6 @@ class OAChatMessageCell: UITableViewCell {
         for (index, component) in components.enumerated() {
             if index % 2 == 0 {
                 // Regular text
-//                let label = UILabel()
-//                label.text = component
-//                label.numberOfLines = 0
-//                label.font = UIFont.systemFont(ofSize: 18)
-//
-//                // Set text color based on role
-//                switch role {
-//                case .user:
-//                    label.textColor = .white
-//                case .assistant, .system:
-//                    label.textColor = .label
-//                }
-//
-//                views.append(label)
                 let textView = createFormattedTextView(from: component, role: role)
                 if !component.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     views.append(textView)
@@ -171,40 +157,32 @@ class OAChatMessageCell: UITableViewCell {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
 
-//        if #available(iOS 15.0, *) {
-            // Use built-in markdown support
+        // Use built-in markdown support
+        let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
 
+        if let attributedString {
+            let mutableString = NSMutableAttributedString(attributedString: attributedString)
 
-            let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+            // Apply role-specific color
+            let color: UIColor = {
+                switch role {
+                    case .user: return .white
+                    case .assistant, .system: return .label
+                }
+            }()
 
-            if let attributedString {
-                let mutableString = NSMutableAttributedString(attributedString: attributedString)
+            mutableString.addAttribute(
+                .foregroundColor,
+                value: color,
+                range: NSRange(location: 0, length: mutableString.length)
+            )
 
-                // Apply role-specific color
-                let color: UIColor = {
-                    switch role {
-                        case .user: return .white
-                        case .assistant, .system: return .label
-                    }
-                }()
-
-                mutableString.addAttribute(
-                    .foregroundColor,
-                    value: color,
-                    range: NSRange(location: 0, length: mutableString.length)
-                )
-
-                textView.attributedText = mutableString
-            } else {
-                // Fallback to plain text
-                textView.text = text
-                textView.textColor = role == .user ? .white : .label
-            }
-//        } else {
-//            // Use custom markdown parsing for iOS 14 and below
-//            let attributedString = parseMarkdown(text, role: role)
-//            textView.attributedText = attributedString
-//        }
+            textView.attributedText = mutableString
+        } else {
+            // Fallback to plain text
+            textView.text = text
+            textView.textColor = role == .user ? .white : .label
+        }
 
         return textView
     }
