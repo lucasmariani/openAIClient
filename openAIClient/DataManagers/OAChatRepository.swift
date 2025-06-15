@@ -122,7 +122,7 @@ final class OAChatRepositoryImpl: ChatRepository {
                         eventContinuation.yield(.messageStarted(chatId: chatId, message: assistantMessage))
 
                     case .messageUpdated(let responseMessage):
-//                        print("🟡 Updating message with ID: \(responseMessage.responseId) for chat: \(chatId)")
+                        print("🟡 Updating message with ID: \(responseMessage.responseId) for chat: \(chatId)")
 
                         // Update in Core Data
                         do {

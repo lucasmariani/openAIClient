@@ -49,7 +49,6 @@ class OAChatViewController: UIViewController {
     required init?(coder: NSCoder) { fatalError() }
     
     deinit {
-        print("chatVC deinit called")
         observationTask?.cancel()
     }
 
@@ -203,7 +202,6 @@ class OAChatViewController: UIViewController {
     }
     
     private func startObservation() {
-        print("chatVC startObservation called")
         observationTask?.cancel()
         observationTask = Task { @MainActor in
             // Use the clean AsyncStream from ChatDataManager
@@ -212,10 +210,8 @@ class OAChatViewController: UIViewController {
                 
                 switch event {
                 case .viewStateChanged(let newState):
-                    print("𝌡 chatVC viewStateChanged via AsyncStream")
                     updateUI(for: newState)
                 case .modelChanged:
-                    print("𝌡 chatVC modelChanged via AsyncStream")
                     updateModelSelection()
                 }
             }
@@ -234,11 +230,6 @@ class OAChatViewController: UIViewController {
             inputField.placeholder = Constants.emptyPlaceholerText
 
         case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
-            if !isStreaming {
-                print("🎏 chatVC updateUI called. isStreaming: FALSE")
-            } else {
-                print("🐖 chatVC updateUI called. isStreaming: TRUE")
-            }
             updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
             sendButton.isEnabled = !isStreaming
             inputField.isEnabled = !isStreaming
@@ -253,12 +244,8 @@ class OAChatViewController: UIViewController {
             inputField.placeholder = Constants.emptyPlaceholerText
 
         case .error(let message):
-            let alert = UIAlertController(title: "Streaming Error", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-            self.present(alert, animated: true, completion: nil)
-
-            // TODO: when a streaming error happens, don't remove previous message. figure outnew error state UI.
-//            updateSnapshot(for: .error(message))
+            // With streaming errors now handled inline, this case is for other error types
+            updateSnapshot(for: .error(message))
             inputField.isEnabled = true
             sendButton.isEnabled = true
             inputField.placeholder = Constants.loadedPlaceholderText
@@ -324,7 +311,6 @@ class OAChatViewController: UIViewController {
     }
 
     func loadChat(with id: String) async {
-        print("Debug: OAChatViewController loadChat called with ID: \(id)")
         await self.chatDataManager.saveProvisionalTextInput(self.inputField.text)
         if let chat = await self.chatDataManager.loadChat(with: id) {
             print("Debug: Successfully loaded chat: \(chat.title)")

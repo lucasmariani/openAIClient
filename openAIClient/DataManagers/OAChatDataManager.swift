@@ -90,27 +90,26 @@ final class OAChatDataManager {
     private func handleRepositoryEvent(_ event: ChatEvent) {
         switch event {
         case .messageStarted(let chatId, let message):
-//            print("📩 DataManager: messageStarted for chat \(chatId), message \(message.id)")
+            print("📩 DataManager: messageStarted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
                 messages.append(message)
                 let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
-                print("viewState will update - chatDataManager")
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
-//                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
             } else {
                 print("📩 DataManager: Ignoring messageStarted for different chat (current: \(currentChatId ?? "none"))")
             }
             
         case .messageUpdated(let chatId, let message):
-//            print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
+            print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
             if chatId == currentChatId {
                 updateMessageInLocalArray(message)
                 let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: true)
                 print("viewState will update - chatDataManager")
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
-//                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
+                print("📊 DataManager: Updated viewState to streaming with \(messages.count) messages")
             } else {
                 print("📝 DataManager: Ignoring messageUpdated for different chat (current: \(currentChatId ?? "none"))")
             }
@@ -121,7 +120,6 @@ final class OAChatDataManager {
                 updateMessageInLocalArray(message)
                 let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: message.id, isStreaming: false)
                 print("📊 DataManager: messageCompleted. Updated viewState to non-streaming with \(messages.count) messages")
-                print("viewState will update - chatDataManager")
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
                 // Generate title after first assistant response
@@ -138,8 +136,22 @@ final class OAChatDataManager {
             if chatId == currentChatId {
                 let errorString = "Streaming error in chat \(chatId): \(error)"
                 print(errorString)
-                // TODO: make message text display error.
-//                viewState = .error(errorString, reconfiguringMessageID: )
+                
+                // Find the assistant message that was being streamed and update it with error text
+                if let lastAssistantMessageIndex = messages.lastIndex(where: { $0.role == .assistant }) {
+                    let errorMessage = OAChatMessage(
+                        id: messages[lastAssistantMessageIndex].id,
+                        role: .assistant,
+                        content: "Error receiving this message.",
+                        date: messages[lastAssistantMessageIndex].date
+                    )
+                    messages[lastAssistantMessageIndex] = errorMessage
+                    
+                    // Update viewState to show the error message (not streaming anymore)
+                    let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: errorMessage.id, isStreaming: false)
+                    viewState = newViewState
+                    uiEventContinuation.yield(.viewStateChanged(newViewState))
+                }
             }
             
         case .chatDeleted(let chatId):
@@ -169,7 +181,7 @@ final class OAChatDataManager {
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             let oldContent = messages[index].content
             messages[index] = message
-//            print("🔄 DataManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
+            print("🔄 DataManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
         } else {
             print("⚠️ DataManager: Could not find message with ID \(message.id) in local array of \(messages.count) messages")
             print("⚠️ DataManager: Available message IDs: \(messages.map { $0.id })")
