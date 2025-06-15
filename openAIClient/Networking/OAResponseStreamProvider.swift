@@ -27,7 +27,7 @@ public enum StreamingError: Error, Sendable {
 @MainActor
 @Observable
 public class OAResponseStreamProvider {
-
+    
     // MARK: - Properties
     
     public let model: OAModel
@@ -46,21 +46,21 @@ public class OAResponseStreamProvider {
     // Throttling support for back-pressure management
     private var lastUpdateTime: Date = Date()
     private let throttleInterval: TimeInterval = 0.05 // 50ms minimum between updates
-
+    
     // MARK: - Initialization
-
+    
     public init(service: OAOpenAIService, model: OAModel) {
         self.service = service
         self.model = model
     }
-
+    
     // MARK: - Public Methods
-
+    
     public func stopStreaming() {
         streamTask?.cancel()
         streamTask = nil
     }
-
+    
     public func clearMessages() {
         stopStreaming()
         messages.removeAll()
@@ -104,7 +104,7 @@ public class OAResponseStreamProvider {
     /// Enhanced streaming with throttling and better error handling
     private func performEnhancedStreaming(for userInput: String, continuation: AsyncStream<StreamingEvent>.Continuation) async {
         error = nil
-
+        
         // Add user message to observable array
         let userMessage = OAResponseMessage(
             role: .user,
@@ -113,10 +113,10 @@ public class OAResponseStreamProvider {
             responseId: ""
         )
         messages.append(userMessage)
-
+        
         var accumulatedText = ""
         var currentMessage = OAResponseMessage(role: .assistant, content: "", responseId: "")
-
+        
         do {
             let stream = try await createParametersAndStream(for: userInput)
             
@@ -132,7 +132,7 @@ public class OAResponseStreamProvider {
                     messages.append(streamingMessage)
                     currentMessage = streamingMessage
                     continuation.yield(.messageStarted(streamingMessage))
-
+                    
                 case .outputTextDelta(let delta):
                     let deltaText = delta.delta
                     if !deltaText.isEmpty {
@@ -203,7 +203,7 @@ public class OAResponseStreamProvider {
             continuation.finish()
         }
     }
-
+    
     /// Helper to create parameters and service stream
     private func createParametersAndStream(for userInput: String) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
         // Build input array with conversation history (excluding current streaming placeholder)
@@ -238,7 +238,7 @@ public class OAResponseStreamProvider {
         
         return try await service.responseCreateStream(parameters)
     }
-
+    
     public func generateTitle(userMessage: String, assistantMessage: String) async throws -> String {
         let titlePrompt = """
         Based on this conversation, generate a concise, descriptive title (max 6 words):
@@ -277,8 +277,8 @@ public class OAResponseStreamProvider {
             return words.joined(separator: " ")
         }
     }
-
-
+    
+    
     /// Helper to update local message array
     private func updateLocalMessage(_ message: OAResponseMessage) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }

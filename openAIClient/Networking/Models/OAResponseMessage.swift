@@ -16,12 +16,12 @@ public struct OAResponseMessage: Identifiable, Sendable {
     public let timestamp: Date
     public let isStreaming: Bool
     public let responseId: String
-
+    
     public enum MessageRole: Sendable {
         case user
         case assistant
     }
-
+    
     // Convenience initializers
     public init(
         role: MessageRole,
@@ -36,7 +36,7 @@ public struct OAResponseMessage: Identifiable, Sendable {
         self.isStreaming = isStreaming
         self.responseId = responseId
     }
-
+    
     // Create updated copy with new content
     public func updatedWith(content: String, isStreaming: Bool? = nil) -> OAResponseMessage {
         OAResponseMessage(

@@ -42,5 +42,4 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
         self.content = content
         self.date = date
     }
-
 }

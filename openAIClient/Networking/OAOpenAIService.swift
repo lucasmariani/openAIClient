@@ -218,12 +218,12 @@ extension OAOpenAIService {
                             line.hasPrefix("data:"), line != "data: [DONE]",
                             let data = line.dropFirst(5).data(using: .utf8)
                         {
-    #if DEBUG
+#if DEBUG
                             if debugEnabled {
                                 try print(
                                     "DEBUG JSON STREAM LINE = \(JSONSerialization.jsonObject(with: data, options: .allowFragments) as? [String: Any])")
                             }
-    #endif
+#endif
                             do {
                                 let decoded = try localDecoder.decode(T.self, from: data)
                                 continuation.yield(decoded)
@@ -231,19 +231,19 @@ extension OAOpenAIService {
                                 let debug = "Key '\(key.stringValue)' not found: \(context.debugDescription)"
                                 let codingPath = "codingPath: \(context.codingPath)"
                                 let debugMessage = debug + codingPath
-    #if DEBUG
+#if DEBUG
                                 if debugEnabled {
                                     print(debugMessage)
                                 }
-    #endif
+#endif
                                 continuation.finish(throwing: APIError.dataCouldNotBeReadMissingData(description: debugMessage))
                                 return
                             } catch {
-    #if DEBUG
+#if DEBUG
                                 if debugEnabled {
                                     debugPrint("CONTINUATION ERROR DECODING \(error.localizedDescription)")
                                 }
-    #endif
+#endif
                                 continuation.finish(throwing: error)
                                 return
                             }
@@ -254,18 +254,18 @@ extension OAOpenAIService {
                     let debug = "Key '\(key.stringValue)' not found: \(context.debugDescription)"
                     let codingPath = "codingPath: \(context.codingPath)"
                     let debugMessage = debug + codingPath
-    #if DEBUG
+#if DEBUG
                     if debugEnabled {
                         print(debugMessage)
                     }
-    #endif
+#endif
                     continuation.finish(throwing: APIError.dataCouldNotBeReadMissingData(description: debugMessage))
                 } catch {
-    #if DEBUG
+#if DEBUG
                     if debugEnabled {
                         print("CONTINUATION ERROR DECODING \(error.localizedDescription)")
                     }
-    #endif
+#endif
                     continuation.finish(throwing: error)
                 }
             }

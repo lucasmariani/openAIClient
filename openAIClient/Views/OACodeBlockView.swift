@@ -69,7 +69,7 @@ class OACodeBlockView: UIView {
 
     private func updateBackgroundForTheme() {
         let themeBackgroundColor = highlightr?.theme.themeBackgroundColor ??
-                                  (traitCollection.userInterfaceStyle == .dark ? UIColor.black : UIColor.white)
+        (traitCollection.userInterfaceStyle == .dark ? UIColor.black : UIColor.white)
         backgroundColor = themeBackgroundColor
         codeTextView.backgroundColor = themeBackgroundColor
     }
@@ -103,7 +103,7 @@ class OACodeBlockView: UIView {
             }
         }
     }
-    
+
     private func handleUserInterfaceStyleChange() {
         setupHighlightr()
         updateBackgroundForTheme()

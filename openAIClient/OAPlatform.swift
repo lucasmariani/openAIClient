@@ -9,10 +9,10 @@ import Foundation
 
 struct OAPlatform {
     static var isMacCatalyst: Bool {
-        #if targetEnvironment(macCatalyst)
+#if targetEnvironment(macCatalyst)
         return true
-        #else
+#else
         return false
-        #endif
+#endif
     }
 }

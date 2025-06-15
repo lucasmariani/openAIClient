@@ -14,9 +14,9 @@ extension Notification.Name {
 
 final class OACoreDataStack: Sendable {
     static let shared = OACoreDataStack()
-
+    
     let container: NSPersistentCloudKitContainer
-
+    
     private init() {
         container = NSPersistentCloudKitContainer(name: "DataModel")
         
@@ -29,11 +29,11 @@ final class OACoreDataStack: Sendable {
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         
-        #if DEBUG
+#if DEBUG
         // Performance debugging (Development only)
         description.setOption(1 as NSNumber, forKey: "NSSQLiteDebugOption")
         description.setOption(1 as NSNumber, forKey: "NSCoreDataConcurrencyDebugKey")
-        #endif
+#endif
         
         // Performance optimizations
         let pragmas = [
@@ -70,20 +70,20 @@ final class OACoreDataStack: Sendable {
             NotificationCenter.default.post(name: .cloudKitDataChanged, object: nil)
         }
     }
-
+    
     var mainContext: NSManagedObjectContext {
         let context = container.viewContext
         context.automaticallyMergesChangesFromParent = true
         return context
     }
-
+    
     func newBackgroundContext() -> NSManagedObjectContext {
         let context = container.newBackgroundContext()
         context.mergePolicy = NSMergePolicy.mergeByPropertyObjectTrump
         context.undoManager = nil  // Disable for performance
         return context
     }
-
+    
     func saveContext() {
         let context = mainContext
         guard context.hasChanges else { return }

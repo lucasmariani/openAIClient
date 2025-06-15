@@ -24,12 +24,12 @@ enum ChatUIEvent {
 @MainActor
 @Observable
 final class OAChatDataManager {
-    
+
     // MARK: - Properties
-    
+
     private let repository: ChatRepository
     private var currentChatId: String? = nil
-    
+
     // UI State - All UI components should bind to these properties
     var chats: [OAChat] = []           // For sidebar
     var messages: [OAChatMessage] = [] // For chat view
@@ -38,29 +38,29 @@ final class OAChatDataManager {
 
     private var eventTask: Task<Void, Never>?
     private var streamingTask: Task<Void, Never>?
-    
+
     // UI Event Stream - for complex state changes
     private let uiEventContinuation: AsyncStream<ChatUIEvent>.Continuation
     let uiEventStream: AsyncStream<ChatUIEvent>
 
     // MARK: - Initialization
-    
+
     init(repository: ChatRepository) {
         self.repository = repository
-        
+
         // Setup UI Event Stream
         let (stream, continuation) = AsyncStream<ChatUIEvent>.makeStream()
         self.uiEventStream = stream
         self.uiEventContinuation = continuation
-        
+
         setupEventHandling()
         loadInitialChats()
     }
-    
+
     deinit {
         uiEventContinuation.finish()
     }
-    
+
     private func loadInitialChats() {
         Task {
             do {
@@ -77,7 +77,7 @@ final class OAChatDataManager {
     }
 
     // MARK: - Private Methods
-    
+
     private func setupEventHandling() {
         eventTask = Task { @MainActor in
             for await event in repository.eventStream {
@@ -86,7 +86,7 @@ final class OAChatDataManager {
             }
         }
     }
-    
+
     private func handleRepositoryEvent(_ event: ChatEvent) {
         switch event {
         case .messageStarted(let chatId, let message):
@@ -100,7 +100,7 @@ final class OAChatDataManager {
             } else {
                 print("📩 DataManager: Ignoring messageStarted for different chat (current: \(currentChatId ?? "none"))")
             }
-            
+
         case .messageUpdated(let chatId, let message):
             print("📝 DataManager: messageUpdated for chat \(chatId), message \(message.id), content length: \(message.content.count)")
             if chatId == currentChatId {
@@ -113,7 +113,7 @@ final class OAChatDataManager {
             } else {
                 print("📝 DataManager: Ignoring messageUpdated for different chat (current: \(currentChatId ?? "none"))")
             }
-            
+
         case .messageCompleted(let chatId, let message):
             print("✅ DataManager: messageCompleted for chat \(chatId), message \(message.id)")
             if chatId == currentChatId {
@@ -131,12 +131,12 @@ final class OAChatDataManager {
             } else {
                 print("✅ DataManager: Ignoring messageCompleted for different chat (current: \(currentChatId ?? "none"))")
             }
-            
+
         case .streamingError(let chatId, let error):
             if chatId == currentChatId {
                 let errorString = "Streaming error in chat \(chatId): \(error)"
                 print(errorString)
-                
+
                 // Find the assistant message that was being streamed and update it with error text
                 if let lastAssistantMessageIndex = messages.lastIndex(where: { $0.role == .assistant }) {
                     let errorMessage = OAChatMessage(
@@ -146,22 +146,22 @@ final class OAChatDataManager {
                         date: messages[lastAssistantMessageIndex].date
                     )
                     messages[lastAssistantMessageIndex] = errorMessage
-                    
+
                     // Update viewState to show the error message (not streaming anymore)
                     let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: errorMessage.id, isStreaming: false)
                     viewState = newViewState
                     uiEventContinuation.yield(.viewStateChanged(newViewState))
                 }
             }
-            
+
         case .chatDeleted(let chatId):
             if chatId == currentChatId {
                 clearCurrentChat()
             }
-            
+
         case .chatsUpdated(let updatedChats):
             chats = updatedChats
-            
+
             // Check if currently selected chat was deleted during sync (e.g., CloudKit remote changes)
             if let currentChatId = currentChatId {
                 let stillExists = updatedChats.contains { $0.id == currentChatId }
@@ -173,10 +173,10 @@ final class OAChatDataManager {
 
         case .chatCreated:
             break
-        
+
         }
     }
-    
+
     private func updateMessageInLocalArray(_ message: OAChatMessage) {
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             let oldContent = messages[index].content
@@ -187,7 +187,7 @@ final class OAChatDataManager {
             print("⚠️ DataManager: Available message IDs: \(messages.map { $0.id })")
         }
     }
-    
+
     private func clearCurrentChat() {
         currentChatId = nil
         messages = []
@@ -195,18 +195,18 @@ final class OAChatDataManager {
         viewState = newViewState
         uiEventContinuation.yield(.viewStateChanged(newViewState))
     }
-    
+
     private func shouldGenerateTitle() -> Bool {
         // Generate title only if we have exactly 2 messages (1 user + 1 assistant)
-        return messages.count == 2 && 
-               messages.first?.role == .user && 
-               messages.last?.role == .assistant
+        return messages.count == 2 &&
+        messages.first?.role == .user &&
+        messages.last?.role == .assistant
     }
-    
+
     private func generateChatTitle(for chatId: String) async {
         guard let userMessage = messages.first?.content,
               let assistantMessage = messages.last?.content else { return }
-        
+
         do {
             try await repository.generateChatTitle(userMessage: userMessage,
                                                    assistantMessage: assistantMessage,
@@ -258,12 +258,12 @@ final class OAChatDataManager {
                 clearCurrentChat()
                 return nil
             }
-            
+
             currentChatId = id
             messages = try await repository.getMessages(for: id)
             let oldModel = selectedModel
             selectedModel = chat.selectedModel
-            
+
             if let chatId = currentChatId {
                 let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
                 viewState = newViewState
@@ -273,14 +273,14 @@ final class OAChatDataManager {
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
             }
-            
+
             // Emit model change event if model changed
             if oldModel != selectedModel {
                 uiEventContinuation.yield(.modelChanged(selectedModel))
             }
-            
+
             return chat
-            
+
         } catch {
             print("Failed to load chat \(id): \(error)")
             clearCurrentChat()
@@ -302,7 +302,7 @@ final class OAChatDataManager {
             do {
                 // Save user message
                 try await repository.saveMessage(chatMessage, toChatId: currentChatId)
-                
+
                 // Start streaming assistant response - events flow through main eventStream
                 streamingTask?.cancel()
                 streamingTask = Task {
@@ -317,7 +317,7 @@ final class OAChatDataManager {
                         print("❌ DataManager: Failed to start streaming: \(error)")
                     }
                 }
-                
+
             } catch {
                 print("Failed to send message: \(error)")
             }
@@ -327,22 +327,22 @@ final class OAChatDataManager {
     func setCurrentChat(_ chatId: String?) {
         streamingTask?.cancel()
         currentChatId = chatId
-        
+
         if chatId == nil {
             clearCurrentChat()
         }
     }
-    
+
     // MARK: - Chat Management Methods for UI
-    
+
     func createNewChat() async throws {
         try await repository.createNewChat()
     }
-    
+
     func deleteChat(with id: String) async throws {
         try await repository.deleteChat(with: id)
     }
-    
+
     func deleteChats(with ids: [String]) async throws {
         try await repository.deleteChats(with: ids)
     }

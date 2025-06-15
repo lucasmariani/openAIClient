@@ -8,42 +8,42 @@
 import UIKit
 
 class OAChatMessageCell: UITableViewCell {
-
+    
     private let messageStackView = UIStackView()
     private let bubbleView = UIView()
     private let bubbleStackView = UIStackView()
-
+    
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupSubviews()
     }
-
+    
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
+    
     private func setupSubviews() {
         backgroundColor = .clear
         selectionStyle = .none
-
+        
         // Configure bubble view
         bubbleView.layer.cornerRadius = 16
         bubbleView.clipsToBounds = true
         bubbleView.translatesAutoresizingMaskIntoConstraints = false
-
+        
         // Configure bubble stack view (contains the actual content)
         bubbleStackView.axis = .vertical
         bubbleStackView.spacing = 8
         bubbleStackView.translatesAutoresizingMaskIntoConstraints = false
         bubbleView.addSubview(bubbleStackView)
-
+        
         // Configure main message stack view (positions the bubble)
         messageStackView.axis = .vertical
         messageStackView.translatesAutoresizingMaskIntoConstraints = false
         messageStackView.addArrangedSubview(bubbleView)
-
+        
         contentView.addSubview(messageStackView)
-
+        
         // Constraints
         NSLayoutConstraint.activate([
             // Message stack view constraints
@@ -51,7 +51,7 @@ class OAChatMessageCell: UITableViewCell {
             messageStackView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
             messageStackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             messageStackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-
+            
             // Bubble stack view constraints (content inside bubble)
             bubbleStackView.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 12),
             bubbleStackView.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -12),
@@ -59,22 +59,22 @@ class OAChatMessageCell: UITableViewCell {
             bubbleStackView.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -12)
         ])
     }
-
+    
     func configure(with message: String, role: OARole) {
         // Remove previous content
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-
+        
         // Configure bubble appearance based on role
         configureBubbleAppearance(for: role)
-
+        
         // Parse and add new content
         let messageViews = parseMessage(message, role: role)
         messageViews.forEach { bubbleStackView.addArrangedSubview($0) }
-
+        
         // Configure bubble alignment and width constraints
         configureBubbleAlignment(for: role)
     }
-
+    
     private func configureBubbleAppearance(for role: OARole) {
         switch role {
         case .user:
@@ -88,7 +88,7 @@ class OAChatMessageCell: UITableViewCell {
             // System messages will have default text color
         }
     }
-
+    
     private func configureBubbleAlignment(for role: OARole) {
         // Remove any existing width constraints
         bubbleView.constraints.forEach { constraint in
@@ -96,7 +96,7 @@ class OAChatMessageCell: UITableViewCell {
                 constraint.isActive = false
             }
         }
-
+        
         switch role {
         case .user:
             // User messages: align to trailing edge, max 80% width
@@ -112,11 +112,11 @@ class OAChatMessageCell: UITableViewCell {
             ])
         }
     }
-
+    
     override func prepareForReuse() {
         super.prepareForReuse()
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-
+        
         // Remove dynamic width constraints
         bubbleView.constraints.forEach { constraint in
             if constraint.firstAttribute == .width {
@@ -124,11 +124,11 @@ class OAChatMessageCell: UITableViewCell {
             }
         }
     }
-
+    
     @MainActor func parseMessage(_ message: String, role: OARole) -> [UIView] {
         var views: [UIView] = []
         let components = message.components(separatedBy: "```")
-
+        
         for (index, component) in components.enumerated() {
             if index % 2 == 0 {
                 // Regular text
@@ -141,14 +141,14 @@ class OAChatMessageCell: UITableViewCell {
                 let lines = component.components(separatedBy: .newlines)
                 let language = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "swift"
                 let code = lines.dropFirst().joined(separator: "\n")
-
+                
                 let codeView = OACodeBlockView(code: code, language: language)
                 views.append(codeView)
             }
         }
         return views
     }
-
+    
     private func createFormattedTextView(from text: String, role: OARole) -> UITextView {
         let textView = UITextView()
         textView.isEditable = false
@@ -156,34 +156,34 @@ class OAChatMessageCell: UITableViewCell {
         textView.backgroundColor = .clear
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
-
+        
         // Use built-in markdown support
         let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-
+        
         if let attributedString {
             let mutableString = NSMutableAttributedString(attributedString: attributedString)
-
+            
             // Apply role-specific color
             let color: UIColor = {
                 switch role {
-                    case .user: return .white
-                    case .assistant, .system: return .label
+                case .user: return .white
+                case .assistant, .system: return .label
                 }
             }()
-
+            
             mutableString.addAttribute(
                 .foregroundColor,
                 value: color,
                 range: NSRange(location: 0, length: mutableString.length)
             )
-
+            
             textView.attributedText = mutableString
         } else {
             // Fallback to plain text
             textView.text = text
             textView.textColor = role == .user ? .white : .label
         }
-
+        
         return textView
     }
 }

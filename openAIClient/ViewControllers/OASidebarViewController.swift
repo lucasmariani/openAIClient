@@ -12,8 +12,8 @@ class OASidebarViewController: UIViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private let chatDataManager: OAChatDataManager
-    private var observationTask: Task<Void, Never>?
-    
+//    private var observationTask: Task<Void, Never>?
+
     // Selection mode properties
     private var addButton: UIBarButtonItem!
     private var selectButton: UIBarButtonItem!
@@ -44,17 +44,12 @@ class OASidebarViewController: UIViewController {
     }
 
     required init?(coder: NSCoder) { fatalError() }
-    
-    deinit {
-        observationTask?.cancel()
-    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupCollectionView()
         setupNavigationBar()
         setupDataSource()
-        setupBindings()
     }
 
     private func setupNavigationBar() {
@@ -68,10 +63,6 @@ class OASidebarViewController: UIViewController {
             primaryAction: UIAction { [weak self] _ in
                 Task {
                     await self?.addNewChat()
-                    // Wait a bit to ensure data source is updated before selecting
-                    await MainActor.run {
-                        self?.selectLatestChat()
-                    }
                 }
             }
         )
@@ -91,7 +82,7 @@ class OASidebarViewController: UIViewController {
                 self?.setEditing(false, animated: true)
             }
         )
-        
+
         // Create toolbar items
         deleteButton = UIBarButtonItem(
             systemItem: .trash,
@@ -100,7 +91,7 @@ class OASidebarViewController: UIViewController {
             }
         )
         deleteButton.isEnabled = false
-        
+
         selectAllButton = UIBarButtonItem(
             title: "Select All",
             primaryAction: UIAction { [weak self] _ in
@@ -116,14 +107,14 @@ class OASidebarViewController: UIViewController {
         var layoutConfig = UICollectionLayoutListConfiguration(appearance: .sidebar)
         layoutConfig.headerMode = .supplementary
         layoutConfig.showsSeparators = false
-        
+
         // Enable swipe-to-delete
         layoutConfig.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
             guard let self = self,
                   !self.isEditing, // Disable swipe actions in editing mode
                   let item = self.dataSource.itemIdentifier(for: indexPath),
                   case .chat(let chat) = item else { return nil }
-            
+
             let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                 Task {
                     do {
@@ -138,7 +129,7 @@ class OASidebarViewController: UIViewController {
                 }
             }
             deleteAction.image = UIImage(systemName: "trash")
-            
+
             return UISwipeActionsConfiguration(actions: [deleteAction])
         }
 
@@ -163,7 +154,7 @@ class OASidebarViewController: UIViewController {
             content.image = UIImage(systemName: "message")
             content.imageProperties.tintColor = .tertiaryLabel
             cell.contentConfiguration = content
-            
+
             // Configure accessories based on editing mode
             if self?.isEditing == true {
                 cell.accessories = [.multiselect()]
@@ -194,29 +185,17 @@ class OASidebarViewController: UIViewController {
         }
     }
 
-    private func setupBindings() {
-        startObservation()
-        updateSnapshot(with: self.chatDataManager.chats)
-    }
-    
-    private func startObservation() {
-        observationTask = Task { @MainActor in
-            while !Task.isCancelled {
-                withObservationTracking {
-                    // Observe changes to the chats array
-                    let _ = chatDataManager.chats
-                } onChange: {
-                    Task { @MainActor in
-                        guard !Task.isCancelled else { return }
-                        self.updateSnapshot(with: self.chatDataManager.chats)
-                    }
-                }
-                
-                // Small delay to prevent excessive observation polling
-                try? await Task.sleep(for: .milliseconds(16))
-            }
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        updateEditButtonState()
+        Task { @MainActor in
+            self.updateSnapshot(with: self.chatDataManager.chats)
+//            if self.chatDataManager.chats.count == 1 {
+//                self.selectLatestChat()
+//            }
         }
     }
+
 
     private func updateSnapshot(with chats: [OAChat]) {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
@@ -224,16 +203,14 @@ class OASidebarViewController: UIViewController {
 
         // Add existing chats
         let chatItems = chats.map { Item.chat($0) }
-
         snapshot.appendItems(chatItems, toSection: .chats)
-
         dataSource.apply(snapshot, animatingDifferences: true)
     }
 
     private func selectLatestChat() {
         let chats = chatDataManager.chats
         guard !chats.isEmpty else { return }
-        
+
         let indexPath = IndexPath(item: 0, section: 0)
         collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
         collectionView.delegate?.collectionView?(collectionView, didSelectItemAt: indexPath)
@@ -254,13 +231,25 @@ class OASidebarViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
-    
+
     // MARK: - Selection Mode
+
+    private func updateEditButtonState() {
+        if self.isEditing {
+            setButtonsToEditMode()
+        } else {
+            restoreButtonsConfiguration()
+        }
+    }
 
     func restoreButtonsConfiguration() {
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
             self.navigationItem.rightBarButtonItems = [self.addButton]
-            self.toolbarItems = [self.flexibleSpace, self.selectButton]
+            if !self.chatDataManager.chats.isEmpty {
+                self.toolbarItems = [self.flexibleSpace, self.selectButton]
+            } else {
+                self.toolbarItems = []
+            }
             self.navigationController?.setToolbarHidden(false, animated: true)
         })
     }
@@ -275,7 +264,7 @@ class OASidebarViewController: UIViewController {
 
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
-        
+
         if editing {
             // Enter selection mode
             setButtonsToEditMode()
@@ -285,18 +274,18 @@ class OASidebarViewController: UIViewController {
 
             // Update cell accessories
             reloadVisibleCells()
-            
+
         } else {
             restoreButtonsConfiguration()
 
             // Disable multi-selection
             collectionView.allowsMultipleSelection = false
-            
+
             // Clear selections
             collectionView.indexPathsForSelectedItems?.forEach {
                 collectionView.deselectItem(at: $0, animated: animated)
             }
-            
+
             // Update cell accessories
             reloadVisibleCells()
             updateSelectionUI()
@@ -308,17 +297,17 @@ class OASidebarViewController: UIViewController {
         var currentSnapshot = dataSource.snapshot()
         let visibleIndexPaths = collectionView.indexPathsForVisibleItems
         let visibleItems = visibleIndexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
-        
+
         if !visibleItems.isEmpty {
             currentSnapshot.reloadItems(visibleItems)
             dataSource.apply(currentSnapshot, animatingDifferences: false)
         }
     }
-    
+
     private func toggleSelectAll() {
         let totalItems = collectionView.numberOfItems(inSection: 0)
         let selectedItems = collectionView.indexPathsForSelectedItems?.count ?? 0
-        
+
         if selectedItems == totalItems {
             // Deselect all
             collectionView.indexPathsForSelectedItems?.forEach {
@@ -335,14 +324,14 @@ class OASidebarViewController: UIViewController {
         }
         updateSelectionUI()
     }
-    
+
     private func updateSelectionUI() {
         let selectedCount = collectionView.indexPathsForSelectedItems?.count ?? 0
         let totalItems = collectionView.numberOfItems(inSection: 0)
-        
+
         // Update delete button
         deleteButton.isEnabled = selectedCount > 0
-        
+
         // Update select all button
         if selectedCount == totalItems && totalItems > 0 {
             selectAllButton.title = "Deselect All"
@@ -350,43 +339,43 @@ class OASidebarViewController: UIViewController {
             selectAllButton.title = "Select All"
         }
     }
-    
+
     private func deleteSelectedChats() {
         guard let selectedIndexPaths = collectionView.indexPathsForSelectedItems,
               !selectedIndexPaths.isEmpty else { return }
-        
+
         let selectedChats = selectedIndexPaths.compactMap { indexPath -> OAChat? in
             guard let item = dataSource.itemIdentifier(for: indexPath),
                   case .chat(let chat) = item else { return nil }
             return chat
         }
-        
+
         let chatCount = selectedChats.count
-        let message = chatCount == 1 ? 
-            "Are you sure you want to delete this chat? This action cannot be undone." :
-            "Are you sure you want to delete \(chatCount) chats? This action cannot be undone."
-        
+        let message = chatCount == 1 ?
+        "Are you sure you want to delete this chat? This action cannot be undone." :
+        "Are you sure you want to delete \(chatCount) chats? This action cannot be undone."
+
         let alert = UIAlertController(
             title: "Delete Chat\(chatCount > 1 ? "s" : "")",
             message: message,
             preferredStyle: .alert
         )
-        
+
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
             Task {
                 await self?.performBatchDelete(chats: selectedChats)
             }
         })
-        
+
         present(alert, animated: true)
     }
-    
+
     private func performBatchDelete(chats: [OAChat]) async {
         do {
             let chatIds = chats.map { $0.id }
             try await chatDataManager.deleteChats(with: chatIds)
-            
+
             await MainActor.run {
                 setEditing(false, animated: true)
             }
@@ -426,7 +415,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
 
         collectionView.deselectItem(at: indexPath, animated: true)
     }
-    
+
     func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
         if isEditing {
             updateSelectionUI()
@@ -435,7 +424,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
 
     func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard let item = dataSource.itemIdentifier(for: indexPath),
-              case .chat(let chat) = item else { return nil }
+              case .chat(let chat) = item else {return nil }
 
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in
             let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
@@ -449,7 +438,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
                     }
                 }
             }
-            
+
             let selectAction = UIAction(title: "Select", image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in
                 self?.setEditing(true, animated: true)
                 // Select this item after entering edit mode

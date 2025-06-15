@@ -5,7 +5,7 @@
 //  Created by Lucas on 16.05.25.
 //
 
-@preconcurrency import CoreData
+import CoreData
 import Observation
 
 // MARK: - Core Data Change Delegate
@@ -22,17 +22,17 @@ final class OACoreDataManager {
 
     // Thread-safe storage for chats - only accessed from CoreDataActor
     private var chats: [OAChat] = []
-    
+
     // Delegate must be accessed through MainActor boundary
     private weak var _delegate: (any OACoreDataManagerDelegate)?
-    
+
     // MARK: - Public Access
-    
+
     /// Returns current chats - safe to call from CoreDataActor
     func getCurrentChats() -> [OAChat] {
         return chats
     }
-    
+
     /// Sets delegate with proper MainActor isolation
     func setDelegate(_ delegate: (any OACoreDataManagerDelegate)?) {
         _delegate = delegate
@@ -42,7 +42,7 @@ final class OACoreDataManager {
         Task {
             try? await self.fetchPersistedChats()
         }
-        
+
         // Listen for CloudKit remote changes
         // Use unowned self to break reference cycle and avoid capture issues
         NotificationCenter.default.addObserver(
@@ -64,20 +64,20 @@ final class OACoreDataManager {
             let chats = try context.fetch(req)
             return chats.compactMap { OAChat(chat: $0) }
         }
-        
+
         // Update local state within CoreDataActor
         let uniqueChats = Dictionary(fetchedChats.map { ($0.id, $0) }, uniquingKeysWith: { latest, _ in latest })
         self.chats = Array(uniqueChats.values).sorted { $0.date > $1.date }
-        
+
         // Notify delegate on MainActor with proper isolation
         await self.notifyDelegateOfChatUpdate()
     }
-    
+
     /// Helper to properly transfer delegate calls to MainActor
     private func notifyDelegateOfChatUpdate() async {
         let currentChats = self.chats
         let delegate = self._delegate
-        
+
         await MainActor.run {
             delegate?.coreDataManagerDidUpdateChats(currentChats)
         }
@@ -86,7 +86,7 @@ final class OACoreDataManager {
     func newChat() async throws {
         let chatDate = Date.now
         let formattedTimestamp = Self.formatChatTimestamp(chatDate)
-        
+
         // Use new CoreDataActor operation pattern
         try await CoreDataActor.performOperation { context in
             let chat = Chat(context: context)
@@ -95,11 +95,11 @@ final class OACoreDataManager {
             chat.title = "New Chat \(formattedTimestamp)"
             return () // Explicit return for Sendable compliance
         }
-        
+
         // Refresh chats after creation
         try await fetchPersistedChats()
     }
-    
+
     nonisolated private static func formatChatTimestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d, h:mm a"
@@ -115,26 +115,26 @@ final class OACoreDataManager {
             guard let chatManagedObject = try context.fetch(fetchRequest).first else {
                 throw StructuredError.chatNotFound(chatId: id, operation: "deleteChat")
             }
-            
+
             context.delete(chatManagedObject)
             return () // Explicit return for Sendable compliance
         }
         // Refresh chats after deletion
         try await fetchPersistedChats()
     }
-    
+
     func deleteChats(with ids: [String]) async throws {
         guard !ids.isEmpty else { return }
-        
+
         // Use modern batch delete for better performance
         let deletedObjectIDs = try await OACoreDataStack.shared.performBatchDelete(
             entity: Chat.self,
             predicateFormat: "id IN %@",
             arguments: [ids]
         )
-        
+
         print("✅ Batch deleted \(deletedObjectIDs.count) chats")
-        
+
         // Refresh chats after batch deletion
         try await fetchPersistedChats()
     }
@@ -146,7 +146,7 @@ final class OACoreDataManager {
             chatFetchRequest.fetchLimit = 1
 
             guard let chatMO = try context.fetch(chatFetchRequest).first else {
-                    throw StructuredError.chatNotFound(chatId: chatID, operation: "fetchMessages")
+                throw StructuredError.chatNotFound(chatId: chatID, operation: "fetchMessages")
             }
 
             // Use a proper fetch request with sort descriptors instead of relationship set
@@ -163,7 +163,7 @@ final class OACoreDataManager {
                 let message = OAChatMessage(message: $0)
                 return message
             }
-            
+
             return sortedMessages
         }
     }
@@ -276,9 +276,9 @@ final class OACoreDataManager {
         }
         try await fetchPersistedChats()
     }
-    
+
     // MARK: - Sync Methods
-    
+
     private func handleRemoteChanges() async {
         do {
             try await self.fetchPersistedChats()
