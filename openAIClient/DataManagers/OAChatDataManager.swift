@@ -108,7 +108,8 @@ final class OAChatDataManager {
             if chatId == currentChatId {
                 let errorString = "Streaming error in chat \(chatId): \(error)"
                 print(errorString)
-                viewState = .error(errorString)
+                // TODO: make message text display error.
+//                viewState = .error(errorString, reconfiguringMessageID: )
             }
             
         case .chatDeleted(let chatId):

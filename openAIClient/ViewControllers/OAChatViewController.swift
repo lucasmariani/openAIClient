@@ -257,9 +257,12 @@ class OAChatViewController: UIViewController {
                             let modelChanged = lastModel != currentModel
                             
                             // Apply throttling only for rapid view state updates (like streaming)
+                            // NEVER throttle completion events (streaming -> non-streaming)
+                            let isCompletionEvent = self.isStreamingCompletionEvent(from: lastViewState, to: currentViewState)
                             let shouldThrottle = viewStateChanged && 
                                                timeSinceLastUpdate < throttleInterval &&
-                                               self.isStreamingUpdate(from: lastViewState, to: currentViewState)
+                                               self.isStreamingUpdate(from: lastViewState, to: currentViewState) &&
+                                               !isCompletionEvent
                             
                             if !shouldThrottle {
                                 // Emit appropriate change event
@@ -290,7 +293,44 @@ class OAChatViewController: UIViewController {
             }
         }
     }
-    
+
+    @MainActor
+    private func updateUI(for state: ChatViewState) {
+        switch state {
+        case .empty:
+            updateSnapshot(for: .empty)
+            inputField.isEnabled = false
+            sendButton.isEnabled = false
+            inputField.text = ""
+            inputField.placeholder = Constants.emptyPlaceholerText
+
+        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
+            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
+            sendButton.isEnabled = !isStreaming
+            inputField.isEnabled = !isStreaming
+            inputField.placeholder = isStreaming ? Constants.streamingPlacerholderText : Constants.loadedPlaceholderText
+
+
+        case .loading:
+            updateSnapshot(for: .empty)
+            inputField.isEnabled = false
+            sendButton.isEnabled = false
+            inputField.text = ""
+            inputField.placeholder = Constants.emptyPlaceholerText
+
+        case .error(let message):
+            let alert = UIAlertController(title: "Streaming Error", message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
+            self.present(alert, animated: true, completion: nil)
+
+            // TODO: when a streaming error happens, don't remove previous message. figure outnew error state UI.
+//            updateSnapshot(for: .error(message))
+            inputField.isEnabled = true
+            sendButton.isEnabled = true
+            inputField.placeholder = Constants.loadedPlaceholderText
+        }
+    }
+
     private func isSameViewState(_ lhs: ChatViewState, _ rhs: ChatViewState) -> Bool {
         switch (lhs, rhs) {
         case (.empty, .empty):
@@ -333,6 +373,15 @@ class OAChatViewController: UIViewController {
         }
     }
     
+    private func isStreamingCompletionEvent(from: ChatViewState, to: ChatViewState) -> Bool {
+        switch (from, to) {
+        case (.chat(_, _, _, true), .chat(_, _, _, false)):
+            return true // Streaming completion event - never throttle this
+        default:
+            return false
+        }
+    }
+    
     private func isHighActivityPeriod() -> Bool {
         // Check if we're currently in a streaming state
         if case .chat(_, _, _, let isStreaming) = chatDataManager.viewState {
@@ -346,47 +395,6 @@ class OAChatViewController: UIViewController {
         guard OAPlatform.isMacCatalyst,
               let button = navigationItem.rightBarButtonItem else { return }
         button.menu = makeModelSelectionMenu()
-    }
-
-    @MainActor
-    private func updateUI(for state: ChatViewState) {
-        switch state {
-        case .empty:
-            updateSnapshot(for: .empty)
-            inputField.isEnabled = false
-            sendButton.isEnabled = false
-            inputField.text = ""
-            inputField.placeholder = Constants.emptyPlaceholerText
-
-        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
-            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
-            if isStreaming {
-                sendButton.isEnabled = false
-                inputField.isEnabled = false
-                inputField.placeholder = Constants.streamingPlacerholderText
-            } else {
-                sendButton.isEnabled = true
-                inputField.isEnabled = true
-                inputField.placeholder = Constants.loadedPlaceholderText
-            }
-        case .loading:
-            updateSnapshot(for: .empty)
-            inputField.isEnabled = false
-            sendButton.isEnabled = false
-            inputField.text = ""
-            inputField.placeholder = Constants.emptyPlaceholerText
-
-        case .error(let message):
-            let alert = UIAlertController(title: "Streaming Error", message: message, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-            self.present(alert, animated: true, completion: nil)
-
-            // TODO: when a streaming error happens, don't remove previous message. figure outnew error state UI.
-//            updateSnapshot(for: .error(message))
-            inputField.isEnabled = true
-            sendButton.isEnabled = true
-            inputField.placeholder = Constants.loadedPlaceholderText
-        }
     }
     
     private func updateSnapshot(for state: ChatViewState, animatingDifferences: Bool = true) {

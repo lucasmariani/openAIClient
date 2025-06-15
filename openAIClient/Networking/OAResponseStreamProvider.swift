@@ -163,7 +163,7 @@ public class OAResponseStreamProvider {
                     }
                     
                 case .responseCompleted(let completed):
-                    previousResponseId = completed.response.id
+                    previousResponseId = completed.response.previousResponseId
                     let finalText = completed.response.outputText ?? accumulatedText
                     let finalMessage = currentMessage.updatedWith(content: finalText, isStreaming: false)
                     updateLocalMessage(finalMessage)
@@ -203,13 +203,7 @@ public class OAResponseStreamProvider {
             continuation.finish()
         }
     }
-    
-    /// Helper to update local message array
-    private func updateLocalMessage(_ message: OAResponseMessage) {
-        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
-        messages[index] = message
-    }
-    
+
     /// Helper to create parameters and service stream
     private func createParametersAndStream(for userInput: String) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
         // Build input array with conversation history (excluding current streaming placeholder)
@@ -282,6 +276,13 @@ public class OAResponseStreamProvider {
             let words = userMessage.components(separatedBy: .whitespaces).prefix(4)
             return words.joined(separator: " ")
         }
+    }
+
+
+    /// Helper to update local message array
+    private func updateLocalMessage(_ message: OAResponseMessage) {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
+        messages[index] = message
     }
 }
 

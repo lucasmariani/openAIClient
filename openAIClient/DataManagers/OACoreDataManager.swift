@@ -180,7 +180,7 @@ final class OACoreDataManager: @unchecked Sendable {
         }
     }
 
-    func addMessage(_ message: OAChatMessage, toChatID chatID: String, isStreaming: Bool = false) async throws {
+    func saveMessage(_ message: OAChatMessage, toChatID chatID: String, isStreaming: Bool = false) async throws {
         try await backgroundContext.perform {
             // Fetch the Chat Managed Object
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
