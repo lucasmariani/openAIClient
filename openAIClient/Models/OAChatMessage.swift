@@ -16,12 +16,14 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
     let role: OARole
     private(set) var content: String
     private(set) var date: Date
+    let attachments: [OAAttachment]
 
-    init(id: String, role: OARole, content: String, date: Date = .now) {
+    init(id: String, role: OARole, content: String, date: Date = .now, attachments: [OAAttachment] = []) {
         self.id = id
         self.role = role
         self.content = content
         self.date = date
+        self.attachments = attachments
     }
 
     init?(message: Message) { // 'Message' is the Core Data entity
@@ -36,6 +38,10 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
         self.role = role
         self.content = content
         self.date = date
+        
+        // Convert Core Data attachments to OAAttachment array
+        let attachmentSet = message.attachments as? Set<Attachment> ?? Set<Attachment>()
+        self.attachments = attachmentSet.compactMap { OAAttachment(attachment: $0) }
     }
 
     mutating func update(with content: String, date: Date) {

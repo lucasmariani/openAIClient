@@ -43,7 +43,7 @@ protocol ChatRepository {
     func saveMessage(_ message: OAChatMessage, toChatId chatId: String) async throws
 
     // Streaming - simplified to just start streaming, events flow through main eventStream
-    func startStreaming(content: String, chatId: String, model: OAModel) async throws
+    func startStreaming(content: String, chatId: String, model: OAModel, attachments: [OAAttachment]) async throws
 
     // Configuration
     func updateChatModel(_ chatId: String, model: OAModel) async throws
@@ -95,7 +95,7 @@ final class OAChatRepositoryImpl: ChatRepository {
 
     // MARK: - Simplified Single-Stream Architecture
 
-    func startStreaming(content: String, chatId: String, model: OAModel) async throws {
+    func startStreaming(content: String, chatId: String, model: OAModel, attachments: [OAAttachment] = []) async throws {
         // Get the chat's current previousResponseId
         let currentChat = try await getChat(with: chatId)
         let previousResponseId = currentChat?.previousResponseId
@@ -116,7 +116,7 @@ final class OAChatRepositoryImpl: ChatRepository {
         
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
-            let streamEvents = streamProvider.streamEvents(for: content, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
+            let streamEvents = streamProvider.streamEvents(for: content, attachments: attachments, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
             for await event in streamEvents {
                 guard !Task.isCancelled else { break }
 

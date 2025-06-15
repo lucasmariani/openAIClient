@@ -220,6 +220,19 @@ final class OACoreDataManager {
             messageMO.chatId = chatID
             messageMO.isStreaming = isStreaming // i don't think i need to store this in CoreData.
 
+            // Save attachments if they exist
+            for attachment in message.attachments {
+                let attachmentMO = Attachment(context: context)
+                attachmentMO.id = attachment.id
+                attachmentMO.filename = attachment.filename
+                attachmentMO.mimeType = attachment.mimeType
+                attachmentMO.data = attachment.data
+                attachmentMO.thumbnailData = attachment.thumbnailData
+                
+                // Add the attachment to the message's attachments relationship
+                messageMO.addToAttachments(attachmentMO)
+            }
+
             // Add the new message to the chat's messages relationship
             chatMO.addToMessages(messageMO)
 

@@ -73,7 +73,7 @@ public class OAResponseStreamProvider {
     // MARK: - Enhanced AsyncSequence API
     
     /// Creates a shareable AsyncSequence for streaming events with back-pressure support
-    public func streamEvents(for text: String, previousResponseId: String? = nil, conversationHistory: [OAResponseMessage] = []) -> AsyncStream<StreamingEvent> {
+    public func streamEvents(for text: String, attachments: [OAAttachment] = [], previousResponseId: String? = nil, conversationHistory: [OAResponseMessage] = []) -> AsyncStream<StreamingEvent> {
         // If we already have a shared stream for this input, return it
         if let existingStream = sharedStream {
             return existingStream
@@ -92,7 +92,7 @@ public class OAResponseStreamProvider {
             
             // Start the streaming task
             self.streamTask = Task { @MainActor in
-                await self.performEnhancedStreaming(for: text, previousResponseId: previousResponseId, conversationHistory: conversationHistory, continuation: continuation)
+                await self.performEnhancedStreaming(for: text, attachments: attachments, previousResponseId: previousResponseId, conversationHistory: conversationHistory, continuation: continuation)
             }
         }
         
@@ -101,7 +101,7 @@ public class OAResponseStreamProvider {
     }
     
     /// Enhanced streaming with throttling and better error handling
-    private func performEnhancedStreaming(for userInput: String, previousResponseId: String?, conversationHistory: [OAResponseMessage], continuation: AsyncStream<StreamingEvent>.Continuation) async {
+    private func performEnhancedStreaming(for userInput: String, attachments: [OAAttachment], previousResponseId: String?, conversationHistory: [OAResponseMessage], continuation: AsyncStream<StreamingEvent>.Continuation) async {
         error = nil
         
         // Add user message to observable array
@@ -117,7 +117,7 @@ public class OAResponseStreamProvider {
         var currentMessage = OAResponseMessage(role: .assistant, content: "", responseId: "")
         
         do {
-            let stream = try await createParametersAndStream(for: userInput, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
+            let stream = try await createParametersAndStream(for: userInput, attachments: attachments, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
             
             for try await event in stream {
                 guard !Task.isCancelled else {
@@ -204,7 +204,7 @@ public class OAResponseStreamProvider {
     }
     
     /// Helper to create parameters and service stream
-    private func createParametersAndStream(for userInput: String, previousResponseId: String?, conversationHistory: [OAResponseMessage]) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
+    private func createParametersAndStream(for userInput: String, attachments: [OAAttachment], previousResponseId: String?, conversationHistory: [OAResponseMessage]) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
         // Build input array with passed conversation history
         var inputArray: [InputItem] = []
         
@@ -222,8 +222,9 @@ public class OAResponseStreamProvider {
             }
         }
         
-        // Add current user message
-        inputArray.append(.message(InputMessage(role: "user", content: .text(userInput))))
+        // Add current user message with attachments
+        let currentUserMessage = try createUserInputMessage(text: userInput, attachments: attachments)
+        inputArray.append(.message(currentUserMessage))
         
         let parameters = OAModelResponseParameter(
             input: .array(inputArray),
@@ -280,6 +281,45 @@ public class OAResponseStreamProvider {
     private func updateLocalMessage(_ message: OAResponseMessage) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
         messages[index] = message
+    }
+    
+    /// Helper method to create user InputMessage with attachments
+    private func createUserInputMessage(text: String, attachments: [OAAttachment]) throws -> InputMessage {
+        if attachments.isEmpty {
+            // Text-only message
+            return InputMessage(role: "user", content: .text(text))
+        } else {
+            // Mixed content message
+            var contentItems: [ContentItem] = []
+            
+            // Add text content if present
+            if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                contentItems.append(.text(TextContent(text: text)))
+            }
+            
+            // Add attachments
+            for attachment in attachments {
+                if attachment.isImage {
+                    // Create image content with base64 data
+                    let imageContent = ImageContent(
+                        detail: "auto",
+                        fileId: nil,
+                        imageUrl: "data:\(attachment.mimeType);base64,\(attachment.base64EncodedData)"
+                    )
+                    contentItems.append(.image(imageContent))
+                } else {
+                    // Create file content
+                    let fileContent = FileContent(
+                        fileData: attachment.base64EncodedData,
+                        fileId: nil,
+                        filename: attachment.filename
+                    )
+                    contentItems.append(.file(fileContent))
+                }
+            }
+            
+            return InputMessage(role: "user", content: .array(contentItems))
+        }
     }
 }
 

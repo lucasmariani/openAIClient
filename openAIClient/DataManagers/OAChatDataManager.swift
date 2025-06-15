@@ -313,7 +313,8 @@ final class OAChatDataManager {
                         try await repository.startStreaming(
                             content: chatMessage.content,
                             chatId: currentChatId,
-                            model: selectedModel
+                            model: selectedModel,
+                            attachments: chatMessage.attachments
                         )
                         print("🏁 DataManager: Streaming task started successfully")
                     } catch {

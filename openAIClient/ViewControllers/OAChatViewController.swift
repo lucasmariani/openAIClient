@@ -7,6 +7,7 @@
 
 import UIKit
 import Observation
+import UniformTypeIdentifiers
 
 class OAChatViewController: UIViewController {
     
@@ -27,9 +28,14 @@ class OAChatViewController: UIViewController {
     }
     
     private let tableView = UITableView()
-    private let inputField = UITextField()
+    private let inputTextView = UITextView()
     private let sendButton = UIButton(type: .system)
+    private let attachButton = UIButton(type: .system)
+    private let attachmentCollectionView = OAAttachmentCollectionView()
     private let inputContainerView = UIView()
+    private let textInputContainerView = UIView()
+    
+    private var pendingAttachments: [OAAttachment] = []
     
     private var inputContainerBottomConstraint: NSLayoutConstraint?
     
@@ -55,8 +61,9 @@ class OAChatViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .systemBackground
-        self.inputField.delegate = self
+        self.inputTextView.delegate = self
         self.tableView.allowsSelection = false
+        self.attachmentCollectionView.delegate = self
         self.setupSubviews()
         self.setupDataSource()
         self.setupNavBar()
@@ -90,25 +97,48 @@ class OAChatViewController: UIViewController {
         
         if OAPlatform.isMacCatalyst {
             modelButton.menu = makeModelSelectionMenu()
-        } else {
+        }
+//        else {
             modelButton.target = self
             modelButton.action = #selector(didTapModelButton)
-        }
+//        }
     }
     
     private func setupSubviews() {
         // Input Container
-        
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
         
-        // Input Field
-        inputField.translatesAutoresizingMaskIntoConstraints = false
-        inputField.isEnabled = true
-        inputField.isUserInteractionEnabled = true
-        inputField.borderStyle = .roundedRect
-        //        inputField.placeholder = Constants.loadedPlaceholderText
-        inputContainerView.addSubview(inputField)
+        // Attachment Collection View
+        attachmentCollectionView.translatesAutoresizingMaskIntoConstraints = false
+        attachmentCollectionView.isHidden = true
+        inputContainerView.addSubview(attachmentCollectionView)
+        
+        // Text Input Container
+        textInputContainerView.translatesAutoresizingMaskIntoConstraints = false
+        textInputContainerView.layer.cornerRadius = 20
+        textInputContainerView.layer.borderWidth = 1
+        textInputContainerView.layer.borderColor = UIColor.systemGray4.cgColor
+        textInputContainerView.backgroundColor = .systemGray6
+        inputContainerView.addSubview(textInputContainerView)
+        
+        // Attach Button
+        attachButton.translatesAutoresizingMaskIntoConstraints = false
+        let attachConfig = UIImage.SymbolConfiguration(scale: .medium)
+        let attachButtonImage = UIImage(systemName: "plus", withConfiguration: attachConfig)
+        attachButton.setImage(attachButtonImage, for: .normal)
+        attachButton.tintColor = .systemGray
+        attachButton.addTarget(self, action: #selector(didTapAttachButton), for: .touchUpInside)
+        textInputContainerView.addSubview(attachButton)
+        
+        // Input TextView
+        inputTextView.translatesAutoresizingMaskIntoConstraints = false
+        inputTextView.isScrollEnabled = false
+        inputTextView.font = .systemFont(ofSize: 16)
+        inputTextView.backgroundColor = .clear
+        inputTextView.textContainer.lineFragmentPadding = 0
+        inputTextView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        textInputContainerView.addSubview(inputTextView)
         
         // Send Button
         sendButton.translatesAutoresizingMaskIntoConstraints = false
@@ -121,13 +151,13 @@ class OAChatViewController: UIViewController {
 #if !targetEnvironment(macCatalyst)
         sendButton.configuration = .glass()
 #endif
-        inputContainerView.addSubview(sendButton)
+        textInputContainerView.addSubview(sendButton)
         
         // TableView
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(OAChatMessageCell.self, forCellReuseIdentifier: Constants.cellId)
-        tableView.separatorStyle = .none // Optional: if you want to hide separators
-        tableView.keyboardDismissMode = .interactive // Optional: dismiss keyboard on scroll
+        tableView.separatorStyle = .none
+        tableView.keyboardDismissMode = .interactive
         view.addSubview(tableView)
         
         inputContainerBottomConstraint = inputContainerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
@@ -139,19 +169,38 @@ class OAChatViewController: UIViewController {
             inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             
+            // Attachment Collection View
+            attachmentCollectionView.topAnchor.constraint(equalTo: inputContainerView.topAnchor),
+            attachmentCollectionView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
+            attachmentCollectionView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
             
-            // Input Field
-            inputField.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
-            inputField.topAnchor.constraint(equalTo: inputContainerView.topAnchor, constant: 8),
-            inputField.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
+            // Text Input Container
+            textInputContainerView.topAnchor.constraint(equalTo: attachmentCollectionView.bottomAnchor),
+            textInputContainerView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
+            textInputContainerView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor, constant: -8),
+            textInputContainerView.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
+            
+            // Attach Button
+            attachButton.leadingAnchor.constraint(equalTo: textInputContainerView.leadingAnchor, constant: 8),
+            attachButton.bottomAnchor.constraint(lessThanOrEqualTo: textInputContainerView.bottomAnchor, constant: -8),
+            attachButton.widthAnchor.constraint(equalToConstant: 32),
+            attachButton.heightAnchor.constraint(equalToConstant: 32),
+            attachButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor),
+
+            // Input TextView
+            inputTextView.leadingAnchor.constraint(equalTo: attachButton.trailingAnchor, constant: 8),
+            inputTextView.topAnchor.constraint(equalTo: textInputContainerView.topAnchor),
+            inputTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
+            inputTextView.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor),
+            inputTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
             
             // Send Button
-            sendButton.leadingAnchor.constraint(equalTo: inputField.trailingAnchor, constant: 8),
-            sendButton.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor, constant: -8),
-            sendButton.centerYAnchor.constraint(equalTo: inputField.centerYAnchor),
-            sendButton.heightAnchor.constraint(equalTo: inputField.heightAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 64), // Or make it intrinsic
-            
+            sendButton.trailingAnchor.constraint(equalTo: textInputContainerView.trailingAnchor, constant: -8),
+            sendButton.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor, constant: -8),
+            sendButton.widthAnchor.constraint(equalToConstant: 32),
+            sendButton.heightAnchor.constraint(equalToConstant: 32),
+            sendButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor),
+
             // TableView
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -192,7 +241,7 @@ class OAChatViewController: UIViewController {
             
             if case .chat(_, let messages, _, _) = self.chatDataManager.viewState,
                let message = messages.first(where: { $0.id == messageID }) {
-                cell.configure(with: message.content, role: message.role)
+                cell.configure(with: message)
             } else {
                 cell.configure(with: "Message not found", role: .system)
             }
@@ -224,31 +273,29 @@ class OAChatViewController: UIViewController {
         switch state {
         case .empty:
             updateSnapshot(for: .empty)
-            inputField.isEnabled = false
+            inputTextView.isEditable = false
             sendButton.isEnabled = false
-            inputField.text = ""
-            inputField.placeholder = Constants.emptyPlaceholerText
+            attachButton.isEnabled = false
+            inputTextView.text = ""
             
         case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
             updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
-            sendButton.isEnabled = !isStreaming
-            inputField.isEnabled = !isStreaming
-            inputField.placeholder = isStreaming ? Constants.streamingPlacerholderText : Constants.loadedPlaceholderText
-            
+            sendButton.isEnabled = !isStreaming && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
+            inputTextView.isEditable = !isStreaming
+            attachButton.isEnabled = !isStreaming
             
         case .loading:
             updateSnapshot(for: .empty)
-            inputField.isEnabled = false
+            inputTextView.isEditable = false
             sendButton.isEnabled = false
-            inputField.text = ""
-            inputField.placeholder = Constants.emptyPlaceholerText
+            attachButton.isEnabled = false
+            inputTextView.text = ""
             
         case .error(let message):
-            // With streaming errors now handled inline, this case is for other error types
             updateSnapshot(for: .error(message))
-            inputField.isEnabled = true
-            sendButton.isEnabled = true
-            inputField.placeholder = Constants.loadedPlaceholderText
+            inputTextView.isEditable = true
+            sendButton.isEnabled = !inputTextView.text.isEmpty || !pendingAttachments.isEmpty
+            attachButton.isEnabled = true
         }
     }
     
@@ -311,38 +358,75 @@ class OAChatViewController: UIViewController {
     }
     
     func loadChat(with id: String) async {
-        await self.chatDataManager.saveProvisionalTextInput(self.inputField.text)
+        await self.chatDataManager.saveProvisionalTextInput(self.inputTextView.text)
         if let chat = await self.chatDataManager.loadChat(with: id) {
             print("Debug: Successfully loaded chat: \(chat.title)")
-            self.inputField.text = chat.provisionaryInputText
+            self.inputTextView.text = chat.provisionaryInputText ?? ""
         } else {
             print("Debug: Failed to load chat with ID: \(id)")
         }
+        
+        // Clear attachments when switching chats
+        pendingAttachments.removeAll()
+        updateAttachmentDisplay()
     }
     
     @objc private func didTapSendButton() {
-        guard let text = inputField.text, !text.isEmpty else {
-            // Optionally, provide feedback if text is empty or chat is not selected
+        let text = inputTextView.text ?? ""
+        guard !text.isEmpty || !pendingAttachments.isEmpty else {
             return
         }
         
-        // Create the new message object using OARole
+        // Create the new message object with attachments
         let newMessage = OAChatMessage(
             id: UUID().uuidString,
             role: .user,
             content: text,
-            date: Date.now
+            date: Date.now,
+            attachments: pendingAttachments
         )
         
-        // 1. Optimistically update the UI
-        self.inputField.text = "" // Clear the input field
+        // Clear the input
+        self.inputTextView.text = ""
+        self.pendingAttachments.removeAll()
+        self.updateAttachmentDisplay()
         self.chatDataManager.sendMessage(newMessage)
+    }
+    
+    @objc private func didTapAttachButton() {
+        presentDocumentPicker()
+    }
+    
+    private func presentDocumentPicker() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
+            .image,
+            .pdf,
+            .text,
+            .plainText,
+            .data
+        ])
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+    
+    private func updateAttachmentDisplay() {
+        attachmentCollectionView.updateAttachments(pendingAttachments)
+        
+        // Update send button state
+        let hasContent = !(inputTextView.text?.isEmpty ?? true) || !pendingAttachments.isEmpty
+        if case .chat(_, _, _, let isStreaming) = chatDataManager.viewState {
+            sendButton.isEnabled = !isStreaming && hasContent
+        }
     }
     
     @objc private func didTapModelButton() {
         if !OAPlatform.isMacCatalyst {
             self.presentModelSelectionActionSheet()
         }
+//        else {
+//            self.makeModelSelectionMenu()
+//        }
     }
     
     @objc private func presentModelSelectionActionSheet() {
@@ -381,10 +465,46 @@ class OAChatViewController: UIViewController {
     }
 }
 
-extension OAChatViewController: UITextFieldDelegate {
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        didTapSendButton()
-        return true
+extension OAChatViewController: UITextViewDelegate {
+    func textViewDidChange(_ textView: UITextView) {
+        updateAttachmentDisplay()
+    }
+}
+
+@MainActor
+extension OAChatViewController: OAAttachmentCollectionViewDelegate {
+    func attachmentCollectionView(_ collectionView: OAAttachmentCollectionView, didRemoveAttachmentAt index: Int) {
+        pendingAttachments.remove(at: index)
+        updateAttachmentDisplay()
+    }
+}
+
+extension OAChatViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        
+        Task {
+            do {
+                let data = try Data(contentsOf: url)
+                let filename = url.lastPathComponent
+                let mimeType = url.mimeType
+                
+                let attachment = OAAttachment(
+                    id: UUID().uuidString,
+                    filename: filename,
+                    mimeType: mimeType,
+                    data: data,
+                    thumbnailData: OAAttachment(id: "", filename: filename, mimeType: mimeType, data: data).generateThumbnail()
+                )
+                
+                await MainActor.run {
+                    self.pendingAttachments.append(attachment)
+                    self.updateAttachmentDisplay()
+                }
+            } catch {
+                print("Error loading file: \(error)")
+            }
+        }
     }
 }
 
