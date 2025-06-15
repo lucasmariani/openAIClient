@@ -277,6 +277,21 @@ final class OACoreDataManager {
         try await fetchPersistedChats()
     }
 
+    func updatePreviousResponseId(_ chatId: String, previousResponseId: String?) async throws {
+        try await CoreDataActor.performOperation { context in
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
+            fetchRequest.fetchLimit = 1
+
+            guard let chatMO = try context.fetch(fetchRequest).first else {
+                throw StructuredError.chatNotFound(chatId: chatId, operation: "updatePreviousResponseId")
+            }
+
+            chatMO.previousResponseId = previousResponseId
+            return () // Explicit return for Sendable compliance
+        }
+    }
+
     // MARK: - Sync Methods
 
     private func handleRemoteChanges() async {

@@ -254,6 +254,9 @@ final class OAChatDataManager {
     @discardableResult
     func loadChat(with id: String) async -> OAChat? {
         do {
+            // Clear stream provider state when switching to a different chat
+            await repository.clearStreamProviderState()
+            
             guard let chat = try await repository.getChat(with: id) else {
                 clearCurrentChat()
                 return nil
@@ -330,6 +333,11 @@ final class OAChatDataManager {
 
         if chatId == nil {
             clearCurrentChat()
+        }
+        
+        // Clear stream provider state to prevent cross-chat conversation pollution
+        Task {
+            await repository.clearStreamProviderState()
         }
     }
 

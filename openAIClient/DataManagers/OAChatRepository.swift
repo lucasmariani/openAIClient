@@ -48,6 +48,9 @@ protocol ChatRepository {
     // Configuration
     func updateChatModel(_ chatId: String, model: OAModel) async throws
     func updateProvisionalText(_ chatId: String, text: String?) async throws
+    func updateChatPreviousResponseId(_ chatId: String, responseId: String?) async throws
+    func resetChatConversationContext(_ chatId: String) async throws
+    func clearStreamProviderState() async
 
     // Title generation
     func generateChatTitle(userMessage: String, assistantMessage: String, chatId: String) async throws
@@ -93,9 +96,27 @@ final class OAChatRepositoryImpl: ChatRepository {
     // MARK: - Simplified Single-Stream Architecture
 
     func startStreaming(content: String, chatId: String, model: OAModel) async throws {
+        // Get the chat's current previousResponseId
+        let currentChat = try await getChat(with: chatId)
+        let previousResponseId = currentChat?.previousResponseId
+        
+        // Get the actual conversation history for this chat
+        let chatMessages = try await getMessages(for: chatId)
+        let conversationHistory = chatMessages.map { chatMessage in
+            OAResponseMessage(
+                role: chatMessage.role == .user ? .user : .assistant,
+                content: chatMessage.content,
+                timestamp: chatMessage.date,
+                responseId: chatMessage.id
+            )
+        }
+        
+        // Clear stream provider state to prevent cross-chat pollution
+        streamProvider.clearMessages()
+        
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
-            let streamEvents = streamProvider.streamEvents(for: content)
+            let streamEvents = streamProvider.streamEvents(for: content, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
             for await event in streamEvents {
                 guard !Task.isCancelled else { break }
 
@@ -155,6 +176,13 @@ final class OAChatRepositoryImpl: ChatRepository {
                     } catch {
                         // Core Data update failed - log but complete streaming anyway
                         print("⚠️ Failed to finalize message \(responseMessage.responseId) in Core Data: \(error)")
+                    }
+                    
+                    // Save the new previousResponseId to this chat
+                    do {
+                        try await updateChatPreviousResponseId(chatId, responseId: responseMessage.responseId)
+                    } catch {
+                        print("⚠️ Failed to update chat previousResponseId: \(error)")
                     }
 
                     let completedMessage = OAChatMessage(
@@ -229,6 +257,18 @@ final class OAChatRepositoryImpl: ChatRepository {
 
     func updateProvisionalText(_ chatId: String, text: String?) async throws {
         try await coreDataManager.updateProvisionalInputText(for: chatId, text: text)
+    }
+    
+    func updateChatPreviousResponseId(_ chatId: String, responseId: String?) async throws {
+        try await coreDataManager.updatePreviousResponseId(chatId, previousResponseId: responseId)
+    }
+    
+    func resetChatConversationContext(_ chatId: String) async throws {
+        try await updateChatPreviousResponseId(chatId, responseId: nil)
+    }
+    
+    func clearStreamProviderState() async {
+        streamProvider.clearMessages()
     }
 
     func generateChatTitle(userMessage: String, assistantMessage: String, chatId: String) async throws {

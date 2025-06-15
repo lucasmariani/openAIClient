@@ -32,7 +32,6 @@ public class OAResponseStreamProvider {
     
     public let model: OAModel
     private let service: OAOpenAIService
-    private var previousResponseId: String?
     private var streamTask: Task<Void, Never>?
     
     // Observable properties for tracking current stream
@@ -74,7 +73,7 @@ public class OAResponseStreamProvider {
     // MARK: - Enhanced AsyncSequence API
     
     /// Creates a shareable AsyncSequence for streaming events with back-pressure support
-    public func streamEvents(for text: String) -> AsyncStream<StreamingEvent> {
+    public func streamEvents(for text: String, previousResponseId: String? = nil, conversationHistory: [OAResponseMessage] = []) -> AsyncStream<StreamingEvent> {
         // If we already have a shared stream for this input, return it
         if let existingStream = sharedStream {
             return existingStream
@@ -93,7 +92,7 @@ public class OAResponseStreamProvider {
             
             // Start the streaming task
             self.streamTask = Task { @MainActor in
-                await self.performEnhancedStreaming(for: text, continuation: continuation)
+                await self.performEnhancedStreaming(for: text, previousResponseId: previousResponseId, conversationHistory: conversationHistory, continuation: continuation)
             }
         }
         
@@ -102,7 +101,7 @@ public class OAResponseStreamProvider {
     }
     
     /// Enhanced streaming with throttling and better error handling
-    private func performEnhancedStreaming(for userInput: String, continuation: AsyncStream<StreamingEvent>.Continuation) async {
+    private func performEnhancedStreaming(for userInput: String, previousResponseId: String?, conversationHistory: [OAResponseMessage], continuation: AsyncStream<StreamingEvent>.Continuation) async {
         error = nil
         
         // Add user message to observable array
@@ -118,7 +117,7 @@ public class OAResponseStreamProvider {
         var currentMessage = OAResponseMessage(role: .assistant, content: "", responseId: "")
         
         do {
-            let stream = try await createParametersAndStream(for: userInput)
+            let stream = try await createParametersAndStream(for: userInput, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
             
             for try await event in stream {
                 guard !Task.isCancelled else {
@@ -163,7 +162,7 @@ public class OAResponseStreamProvider {
                     }
                     
                 case .responseCompleted(let completed):
-                    previousResponseId = completed.response.previousResponseId
+                    // previousResponseId will be handled by the repository
                     let finalText = completed.response.outputText ?? accumulatedText
                     let finalMessage = currentMessage.updatedWith(content: finalText, isStreaming: false)
                     updateLocalMessage(finalMessage)
@@ -205,12 +204,11 @@ public class OAResponseStreamProvider {
     }
     
     /// Helper to create parameters and service stream
-    private func createParametersAndStream(for userInput: String) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
-        // Build input array with conversation history (excluding current streaming placeholder)
+    private func createParametersAndStream(for userInput: String, previousResponseId: String?, conversationHistory: [OAResponseMessage]) async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error> {
+        // Build input array with passed conversation history
         var inputArray: [InputItem] = []
         
-        // Add conversation history (exclude the streaming placeholder)
-        let conversationHistory = messages.dropLast()
+        // Add conversation history from the specific chat
         for message in conversationHistory {
             guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !message.isStreaming else { continue }
@@ -277,8 +275,7 @@ public class OAResponseStreamProvider {
             return words.joined(separator: " ")
         }
     }
-    
-    
+
     /// Helper to update local message array
     private func updateLocalMessage(_ message: OAResponseMessage) {
         guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return }
