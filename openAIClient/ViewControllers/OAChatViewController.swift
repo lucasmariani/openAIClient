@@ -284,7 +284,9 @@ class OAChatViewController: UIViewController {
             sendButton.isEnabled = !isStreaming && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
             inputTextView.isEditable = !isStreaming
             attachButton.isEnabled = !isStreaming
-            
+            inputTextView.text = isStreaming ? "Receiving message..." : ""
+            inputTextView.textColor = isStreaming ? .systemGray2 : .label
+
         case .loading:
             updateSnapshot(for: .empty)
             inputTextView.isEditable = false

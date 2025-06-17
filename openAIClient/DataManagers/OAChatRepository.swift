@@ -24,6 +24,7 @@ enum ChatEvent {
 
 // MARK: - Repository Protocol
 
+// TODO: double check what is the point of having a chatDataManager and a chatRepository.
 @MainActor
 protocol OAChatRepository {
     // @Observable data manager for modern observation patterns
