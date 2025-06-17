@@ -1,5 +1,5 @@
 //
-//  OAEndpoint.swift
+//  Endpoint.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -17,19 +17,19 @@ enum HTTPMethod: String {
 
 // MARK: - Endpoint
 
-protocol OAEndpoint {
+protocol Endpoint {
     func path(
-        in openAIEnvironment: OAOpenAIEnvironment)
+        in openAIEnvironment: OpenAIEnvironment)
     -> String
 }
 
 // MARK: Endpoint+Requests
 
-extension OAEndpoint {
+extension Endpoint {
     
     func request(
         apiKey: Authorization,
-        openAIEnvironment: OAOpenAIEnvironment,
+        openAIEnvironment: OpenAIEnvironment,
         organizationID: String?,
         method: HTTPMethod,
         params: Encodable? = nil,
@@ -62,10 +62,10 @@ extension OAEndpoint {
     
     func multiPartRequest(
         apiKey: Authorization,
-        openAIEnvironment: OAOpenAIEnvironment,
+        openAIEnvironment: OpenAIEnvironment,
         organizationID: String?,
         method: HTTPMethod,
-        params: OAMultipartFormDataParameters,
+        params: MultipartFormDataParameters,
         queryItems: [URLQueryItem] = [])
     throws -> URLRequest
     {
@@ -98,7 +98,7 @@ extension OAEndpoint {
     
 }
 
-public protocol OAMultipartFormDataParameters {
+public protocol MultipartFormDataParameters {
     
     func encode(boundary: String) -> Data
 }

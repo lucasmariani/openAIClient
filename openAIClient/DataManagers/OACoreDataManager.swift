@@ -168,7 +168,7 @@ final class OACoreDataManager {
         }
     }
 
-    func updateMessage(with chatMessage: OAResponseMessage, chatId: String, isStreaming: Bool? = nil) async throws {
+    func updateMessage(with chatMessage: OAChatMessage, chatId: String, isStreaming: Bool? = nil) async throws {
         try await CoreDataActor.performOperation { context in
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
@@ -180,13 +180,13 @@ final class OACoreDataManager {
 
             // Find the specific message within the chat's messages
             guard let messages = chatMO.messages as? Set<Message>,
-                  let messageToUpdate = messages.first(where: { $0.id == chatMessage.responseId }) else {
-                throw StructuredError.messageNotFound(messageId: chatMessage.responseId, chatId: chatId, operation: "updateMessage")
+                  let messageToUpdate = messages.first(where: { $0.id == chatMessage.id }) else {
+                throw StructuredError.messageNotFound(messageId: chatMessage.id, chatId: chatId, operation: "updateMessage")
             }
 
             // Update the message properties
             messageToUpdate.content = chatMessage.content
-            messageToUpdate.date = chatMessage.timestamp
+            messageToUpdate.date = chatMessage.date
 
             // Update streaming state if provided
             if let isStreaming = isStreaming {
@@ -194,7 +194,7 @@ final class OACoreDataManager {
             }
 
             // Update the chat's date to reflect the latest message activity
-            chatMO.date = chatMessage.timestamp
+            chatMO.date = chatMessage.date
 
             return () // Explicit return for Sendable compliance
         }
@@ -221,17 +221,17 @@ final class OACoreDataManager {
             messageMO.isStreaming = isStreaming // i don't think i need to store this in CoreData.
 
             // Save attachments if they exist
-            for attachment in message.attachments {
-                let attachmentMO = Attachment(context: context)
-                attachmentMO.id = attachment.id
-                attachmentMO.filename = attachment.filename
-                attachmentMO.mimeType = attachment.mimeType
-                attachmentMO.data = attachment.data
-                attachmentMO.thumbnailData = attachment.thumbnailData
-                
-                // Add the attachment to the message's attachments relationship
-                messageMO.addToAttachments(attachmentMO)
-            }
+//            for attachment in message.attachments {
+//                let attachmentMO = Attachment(context: context)
+//                attachmentMO.id = attachment.id
+//                attachmentMO.filename = attachment.filename
+//                attachmentMO.mimeType = attachment.mimeType
+//                attachmentMO.data = attachment.data
+//                attachmentMO.thumbnailData = attachment.thumbnailData
+//                
+//                // Add the attachment to the message's attachments relationship
+//                messageMO.addToAttachments(attachmentMO)
+//            }
 
             // Add the new message to the chat's messages relationship
             chatMO.addToMessages(messageMO)
@@ -258,7 +258,7 @@ final class OACoreDataManager {
         }
     }
 
-    func updateSelectedModelFor(_ chatId: String?, model: OAModel) async throws {
+    func updateSelectedModelFor(_ chatId: String?, model: Model) async throws {
         guard let chatId else { return }
         try await CoreDataActor.performOperation { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()

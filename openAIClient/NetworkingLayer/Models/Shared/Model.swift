@@ -1,5 +1,5 @@
 //
-//  OAModel.swift
+//  Model.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -8,8 +8,8 @@
 import Foundation
 
 /// [Models](https://platform.openai.com/docs/models)
-public enum OAModel: Sendable, Codable, Equatable, Hashable, CaseIterable {
-    public static let allCases: [OAModel] = [.o1, .o1pro, .o3mini, .o4mini, .gpt4omini, .gpt4o, .gpt41nano, .gpt41mini, .gpt41]
+public enum Model: Sendable, Codable, Equatable, Hashable, CaseIterable {
+    public static let allCases: [Model] = [.o1, .o1pro, .o3mini, .o4mini, .gpt4omini, .gpt4o, .gpt41nano, .gpt41mini, .gpt41]
 
     // Reasoning
     case o1

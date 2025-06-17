@@ -1,5 +1,5 @@
 //
-//  OAReasoning.swift
+//  Reasoning.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct OAReasoning: Codable, Sendable {
+public struct Reasoning: Codable, Sendable {
     public init(effort: String? = nil, generateSummary: String? = nil, summary: String? = nil) {
         self.effort = effort
         self.generateSummary = generateSummary

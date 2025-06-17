@@ -1,5 +1,5 @@
 //
-//  OATextConfiguration.swift
+//  TextConfiguration.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -10,11 +10,11 @@ import Foundation
 // MARK: - TextConfiguration
 
 /// Text configuration options
-public struct OATextConfiguration: Codable, Sendable {
+public struct TextConfiguration: Codable, Sendable {
     /// An object specifying the format that the model must output
-    public var format: OAFormatType
+    public var format: FormatType
     
-    public init(format: OAFormatType) {
+    public init(format: FormatType) {
         self.format = format
     }
 }
@@ -22,9 +22,9 @@ public struct OATextConfiguration: Codable, Sendable {
 // MARK: - FormatType
 
 /// Format types for text response
-public enum OAFormatType: Codable, Sendable {
+public enum FormatType: Codable, Sendable {
     case text
-    case jsonSchema(OAJsonSchema)
+    case jsonSchema(JsonSchema)
     case jsonObject
     
     public init(from decoder: Decoder) throws {
@@ -36,7 +36,7 @@ public enum OAFormatType: Codable, Sendable {
             self = .text
             
         case "json_schema":
-            let schema = try container.decode(OAJsonSchema.self, forKey: .schema)
+            let schema = try container.decode(JsonSchema.self, forKey: .schema)
             self = .jsonSchema(schema)
             
         case "json_object":

@@ -1,5 +1,5 @@
 //
-//  OAOpenAIFactoryService.swift
+//  OpenAIFactoryService.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public class OAOpenAIServiceFactory {
+public class OpenAIServiceFactory {
     
     /// Creates and returns an instance of `OpenAIService`.
     ///
@@ -25,9 +25,9 @@ public class OAOpenAIServiceFactory {
         configuration: URLSessionConfiguration = .default,
         decoder: JSONDecoder = .init(),
         debugEnabled: Bool = false)
-    -> OAOpenAIService
+    -> OpenAIService
     {
-        OADefaultOpenAIService(
+        DefaultOpenAIService(
             apiKey: apiKey,
             organizationID: organizationID,
             configuration: configuration,

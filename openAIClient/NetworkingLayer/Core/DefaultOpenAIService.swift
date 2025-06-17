@@ -1,5 +1,5 @@
 //
-//  OADefaultOpenAIService.swift
+//  DefaultOpenAIService.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct OADefaultOpenAIService: OAOpenAIService, Sendable {
+struct DefaultOpenAIService: OpenAIService, Sendable {
     
     init(
         apiKey: String,
@@ -25,7 +25,7 @@ struct OADefaultOpenAIService: OAOpenAIService, Sendable {
         self.apiKey = .bearer(apiKey)
         self.organizationID = organizationID
         self.extraHeaders = extraHeaders
-        openAIEnvironment = OAOpenAIEnvironment(
+        openAIEnvironment = OpenAIEnvironment(
             baseURL: baseURL ?? "https://api.openai.com",
             proxyPath: proxyPath,
             version: overrideVersion ?? "v1")
@@ -34,46 +34,46 @@ struct OADefaultOpenAIService: OAOpenAIService, Sendable {
     
     let session: URLSession
     let decoder: JSONDecoder
-    let openAIEnvironment: OAOpenAIEnvironment
+    let openAIEnvironment: OpenAIEnvironment
     
     // MARK: Response
     
     func responseCreate(
-        _ parameters: OAModelResponseParameter)
-    async throws -> OAResponseModel
+        _ parameters: ModelResponseParameter)
+    async throws -> ResponseModel
     {
         var responseParameters = parameters
         responseParameters.stream = false
-        let request = try OAOpenAIAPI.response(.create).request(
+        let request = try OpenAIAPI.response(.create).request(
             apiKey: apiKey,
             openAIEnvironment: openAIEnvironment,
             organizationID: organizationID,
             method: .post,
             params: responseParameters,
             extraHeaders: extraHeaders)
-        return try await fetch(debugEnabled: debugEnabled, type: OAResponseModel.self, with: request)
+        return try await fetch(debugEnabled: debugEnabled, type: ResponseModel.self, with: request)
     }
     
     func responseModel(
         id: String)
-    async throws -> OAResponseModel
+    async throws -> ResponseModel
     {
-        let request = try OAOpenAIAPI.response(.get(responseID: id)).request(
+        let request = try OpenAIAPI.response(.get(responseID: id)).request(
             apiKey: apiKey,
             openAIEnvironment: openAIEnvironment,
             organizationID: organizationID,
             method: .post,
             extraHeaders: extraHeaders)
-        return try await fetch(debugEnabled: debugEnabled, type: OAResponseModel.self, with: request)
+        return try await fetch(debugEnabled: debugEnabled, type: ResponseModel.self, with: request)
     }
     
     func responseCreateStream(
-        _ parameters: OAModelResponseParameter)
-    async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error>
+        _ parameters: ModelResponseParameter)
+    async throws -> AsyncThrowingStream<ResponseStreamEvent, Error>
     {
         var responseParameters = parameters
         responseParameters.stream = true
-        let request = try OAOpenAIAPI.response(.create).request(
+        let request = try OpenAIAPI.response(.create).request(
             apiKey: apiKey,
             openAIEnvironment: openAIEnvironment,
             organizationID: organizationID,
@@ -81,7 +81,7 @@ struct OADefaultOpenAIService: OAOpenAIService, Sendable {
             params: responseParameters,
             extraHeaders: extraHeaders)
         
-        return try await fetchStream(debugEnabled: debugEnabled, type: OAResponseStreamEvent.self, with: request)
+        return try await fetchStream(debugEnabled: debugEnabled, type: ResponseStreamEvent.self, with: request)
     }
     
     private static let assistantsBetaV2 = "assistants=v2"

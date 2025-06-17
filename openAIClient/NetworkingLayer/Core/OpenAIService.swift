@@ -1,5 +1,5 @@
 //
-//  OAOpenAiService.swift
+//  OpenAiService.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -34,7 +34,7 @@ public enum APIError: Error {
 
 // MARK: - OpenAIEnvironment
 
-public struct OAOpenAIEnvironment: Sendable {
+public struct OpenAIEnvironment: Sendable {
 
     /// The base URL for the OpenAI API.
     /// Example: "https://api.openai.com"
@@ -81,7 +81,7 @@ public enum Authorization: Sendable {
 /// The protocol outlines methods for fetching data and streaming responses,
 /// as well as handling JSON decoding and networking tasks.
 
-public protocol OAOpenAIService {
+public protocol OpenAIService: Sendable {
 
     /// The `URLSession` responsible for executing all network requests.
     ///
@@ -95,18 +95,23 @@ public protocol OAOpenAIService {
     var decoder: JSONDecoder { get }
 
     /// A computed property representing the current OpenAI environment configuration.
-    var openAIEnvironment: OAOpenAIEnvironment { get }
+    var openAIEnvironment: OpenAIEnvironment { get }
 
     /// Returns a streaming [Response](https://platform.openai.com/docs/api-reference/responses/object) object.
     ///
     /// - Parameter parameters: The response model parameters with stream set to true
     /// - Returns: An AsyncThrowingStream of ResponseStreamEvent objects
     @MainActor func responseCreateStream(
-        _ parameters: OAModelResponseParameter)
-    async throws -> AsyncThrowingStream<OAResponseStreamEvent, Error>
+        _ parameters: ModelResponseParameter)
+    async throws -> AsyncThrowingStream<ResponseStreamEvent, Error>
+
+    func responseCreate(
+        _ parameters: ModelResponseParameter)
+    async throws -> ResponseModel
+
 }
 
-extension OAOpenAIService {
+extension OpenAIService {
     /// Asynchronously fetches a decodable data type from OpenAI's API.
     ///
     /// - Parameters:
@@ -134,7 +139,7 @@ extension OAOpenAIService {
         guard httpResponse.statusCode == 200 else {
             var errorMessage = "status code \(httpResponse.statusCode)"
             do {
-                let error = try decoder.decode(OAOpenAIErrorResponse.self, from: data)
+                let error = try decoder.decode(OpenAIErrorResponse.self, from: data)
                 errorMessage += " \(error.error.message ?? "NO ERROR MESSAGE PROVIDED")"
             } catch {
                 // If decoding fails, proceed with a general error message
@@ -356,4 +361,4 @@ extension OAOpenAIService {
 
 }
 
-extension OAResponseStreamEvent: @unchecked Sendable {}
+extension ResponseStreamEvent: @unchecked Sendable {}

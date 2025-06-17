@@ -1,5 +1,5 @@
 //
-//  OAUsage.swift
+//  Usage.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -8,10 +8,10 @@
 import Foundation
 
 /// Represents token usage details including input tokens, output tokens, a breakdown of output tokens, and the total tokens used.
-public struct OAUsage: Codable, Sendable {
+public struct Usage: Codable, Sendable {
     
     /// Details about input tokens
-    public struct OAInputTokensDetails: Codable, Sendable {
+    public struct InputTokensDetails: Codable, Sendable {
         /// Number of cached tokens
         public let cachedTokens: Int?
         
@@ -21,7 +21,7 @@ public struct OAUsage: Codable, Sendable {
     }
     
     /// A detailed breakdown of the output tokens.
-    public struct OAOutputTokensDetails: Codable, Sendable {
+    public struct OutputTokensDetails: Codable, Sendable {
         /// The number of reasoning tokens.
         public let reasoningTokens: Int?
         
@@ -40,13 +40,13 @@ public struct OAUsage: Codable, Sendable {
     public let inputTokens: Int?
     
     /// Details about input tokens
-    public let inputTokensDetails: OAInputTokensDetails?
+    public let inputTokensDetails: InputTokensDetails?
     
     /// The number of output tokens.
     public let outputTokens: Int?
     
     /// A detailed breakdown of the output tokens.
-    public let outputTokensDetails: OAOutputTokensDetails?
+    public let outputTokensDetails: OutputTokensDetails?
     
     /// The total number of tokens used.
     public let totalTokens: Int?

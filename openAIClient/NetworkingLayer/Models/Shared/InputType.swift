@@ -18,7 +18,7 @@ import Foundation
 /// [File inputs](https://platform.openai.com/docs/guides/pdf-files)
 /// [Conversation state](https://platform.openai.com/docs/guides/conversation-state)
 /// [Function calling](https://platform.openai.com/docs/guides/function-calling)
-public enum OAInputType: Codable, Sendable {
+public enum InputType: Codable, Sendable {
     /// A text input to the model, equivalent to a text input with the user role.
     case string(String)
     

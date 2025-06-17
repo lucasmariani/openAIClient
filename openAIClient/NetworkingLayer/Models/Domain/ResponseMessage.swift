@@ -1,5 +1,5 @@
 //
-//  OAResponseMessage.swift
+//  ResponseMessage.swift
 //  openAIClient
 //
 //  Created by Lucas on 14.06.25.
@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Message Model
 
-public struct OAResponseMessage: Identifiable, Sendable {
+public struct ResponseMessage: Identifiable, Sendable {
     public let id = UUID()
     public let role: MessageRole
     public let content: String
@@ -17,7 +17,7 @@ public struct OAResponseMessage: Identifiable, Sendable {
     public let isStreaming: Bool
     public let responseId: String
     
-    public enum MessageRole: Sendable {
+    public enum MessageRole: String, Sendable {
         case user
         case assistant
     }
@@ -38,8 +38,8 @@ public struct OAResponseMessage: Identifiable, Sendable {
     }
     
     // Create updated copy with new content
-    public func updatedWith(content: String, isStreaming: Bool? = nil) -> OAResponseMessage {
-        OAResponseMessage(
+    public func updatedWith(content: String, isStreaming: Bool? = nil) -> ResponseMessage {
+        ResponseMessage(
             role: self.role,
             content: content,
             timestamp: Date(),

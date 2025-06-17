@@ -1,5 +1,5 @@
 //
-//  OAOpenAiErrorResponse.swift
+//  OpenAiErrorResponse.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct OAOpenAIErrorResponse: Decodable {
+public struct OpenAIErrorResponse: Decodable {
     
     public let error: Error
     

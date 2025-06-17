@@ -1,5 +1,5 @@
 //
-//  OAOutputItem.swift
+//  OutputItem.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -8,7 +8,7 @@
 import Foundation
 
 /// An output item from the model response
-public enum OAOutputItem: Decodable, Sendable {
+public enum OutputItem: Decodable, Sendable {
     /// An output message from the model
     case message(Message)
 
@@ -33,7 +33,7 @@ public enum OAOutputItem: Decodable, Sendable {
     /// An output message from the model
     public struct Message: Decodable, Sendable {
         /// The content of the output message
-        public let content: [OAContentItem]
+        public let content: [ContentItem]
         /// The unique ID of the output message
         public let id: String
         /// The role of the output message. Always "assistant"
@@ -49,9 +49,9 @@ public enum OAOutputItem: Decodable, Sendable {
     }
 
     /// Content item in an output message
-    public enum OAContentItem: Decodable, Sendable {
+    public enum ContentItem: Decodable, Sendable {
         /// Text output from the model
-        case outputText(OAOutputText)
+        case outputText(OutputText)
 
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -59,7 +59,7 @@ public enum OAOutputItem: Decodable, Sendable {
 
             switch type {
             case "output_text":
-                let text = try OAOutputText(from: decoder)
+                let text = try OutputText(from: decoder)
                 self = .outputText(text)
 
             default:
@@ -71,11 +71,11 @@ public enum OAOutputItem: Decodable, Sendable {
         }
 
         /// Text output from the model
-        public struct OAOutputText: Decodable, Sendable {
+        public struct OutputText: Decodable, Sendable {
             /// The text content
             public let text: String
             /// Annotations in the text, if any
-            public let annotations: [OAAnnotation]
+            public let annotations: [Annotation]
             /// The type of the content. Always "output_text"
             public let type: String
 
@@ -85,7 +85,7 @@ public enum OAOutputItem: Decodable, Sendable {
         }
 
         /// Annotation in text output
-        public struct OAAnnotation: Decodable, Sendable {
+        public struct Annotation: Decodable, Sendable {
             // Properties would be defined based on different annotation types
             // Such as file_citation, etc.
         }

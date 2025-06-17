@@ -18,7 +18,7 @@ enum ChatViewState {
 // UI Events emitted by ChatDataManager
 enum ChatUIEvent {
     case viewStateChanged(ChatViewState)
-    case modelChanged(OAModel)
+    case modelChanged(Model)
 }
 
 @MainActor
@@ -27,13 +27,13 @@ final class OAChatDataManager {
 
     // MARK: - Properties
 
-    private let repository: ChatRepository
+    private let repository: OAChatRepository
     private var currentChatId: String? = nil
 
     // UI State - All UI components should bind to these properties
     var chats: [OAChat] = []           // For sidebar
     var messages: [OAChatMessage] = [] // For chat view
-    var selectedModel: OAModel = .gpt41nano
+    var selectedModel: Model = .gpt41nano
     var viewState: ChatViewState = .loading
 
     private var eventTask: Task<Void, Never>?
@@ -45,7 +45,7 @@ final class OAChatDataManager {
 
     // MARK: - Initialization
 
-    init(repository: ChatRepository) {
+    init(repository: OAChatRepository) {
         self.repository = repository
 
         // Setup UI Event Stream
@@ -231,7 +231,7 @@ final class OAChatDataManager {
         }
     }
 
-    func updateModel(_ model: OAModel) async {
+    func updateModel(_ model: Model) async {
         guard let chatId = currentChatId else { return }
         do {
             try await repository.updateChatModel(chatId, model: model)

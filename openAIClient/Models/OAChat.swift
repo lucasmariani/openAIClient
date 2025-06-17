@@ -12,7 +12,7 @@ struct OAChat: Codable, Sendable, Hashable {
     let date: Date
     let title: String
     let provisionaryInputText: String?
-    let selectedModel: OAModel
+    let selectedModel: Model
     let previousResponseId: String?
     let messages: Set<OAChatMessage>
 }
@@ -26,7 +26,7 @@ extension OAChat {
         self.date = date
         self.title = chat.title ?? "No title"
         self.provisionaryInputText = chat.provisionaryInputText
-        self.selectedModel = OAModel(value: chat.selectedModel ?? "gpt-4.1-nano")
+        self.selectedModel = Model(value: chat.selectedModel ?? "gpt-4.1-nano")
         self.previousResponseId = chat.previousResponseId
         self.messages = []
     }

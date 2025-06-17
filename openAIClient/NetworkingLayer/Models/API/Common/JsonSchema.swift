@@ -1,5 +1,5 @@
 //
-//  OAJsonSchema.swift
+//  JsonSchema.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -107,13 +107,13 @@ public enum JSONSchemaType: Codable, Equatable, Sendable {
 
 // MARK: - JSONSchema
 
-public final class OAJsonSchema: Codable, Equatable, @unchecked Sendable {
+public final class JsonSchema: Codable, Equatable, @unchecked Sendable {
     
     public init(
         type: JSONSchemaType? = nil,
         description: String? = nil,
-        properties: [String: OAJsonSchema]? = nil,
-        items: OAJsonSchema? = nil,
+        properties: [String: JsonSchema]? = nil,
+        items: JsonSchema? = nil,
         required: [String]? = nil,
         additionalProperties: Bool = false,
         enum: [String]? = nil,
@@ -146,8 +146,8 @@ public final class OAJsonSchema: Codable, Equatable, @unchecked Sendable {
         
         type = try container.decodeIfPresent(JSONSchemaType.self, forKey: .type)
         description = try container.decodeIfPresent(String.self, forKey: .description)
-        properties = try container.decodeIfPresent([String: OAJsonSchema].self, forKey: .properties)
-        items = try container.decodeIfPresent(OAJsonSchema.self, forKey: .items)
+        properties = try container.decodeIfPresent([String: JsonSchema].self, forKey: .properties)
+        items = try container.decodeIfPresent(JsonSchema.self, forKey: .items)
         required = try container.decodeIfPresent([String].self, forKey: .required)
         additionalProperties = try container.decodeIfPresent(Bool.self, forKey: .additionalProperties)
         `enum` = try container.decodeIfPresent([String].self, forKey: .enum)
@@ -156,8 +156,8 @@ public final class OAJsonSchema: Codable, Equatable, @unchecked Sendable {
     
     public let type: JSONSchemaType?
     public let description: String?
-    public var properties: [String: OAJsonSchema]?
-    public var items: OAJsonSchema?
+    public var properties: [String: JsonSchema]?
+    public var items: JsonSchema?
     /// To use Structured Outputs, all fields or function parameters [must be specified as required.](https://platform.openai.com/docs/guides/structured-outputs/all-fields-must-be-required)
     /// Although all fields must be required (and the model will return a value for each parameter), it is possible to emulate an optional parameter by using a union type with null.
     public let required: [String]?
@@ -166,7 +166,7 @@ public final class OAJsonSchema: Codable, Equatable, @unchecked Sendable {
     public let `enum`: [String]?
     public var ref: String?
     
-    public static func ==(lhs: OAJsonSchema, rhs: OAJsonSchema) -> Bool {
+    public static func ==(lhs: JsonSchema, rhs: JsonSchema) -> Bool {
         lhs.type == rhs.type &&
         lhs.description == rhs.description &&
         lhs.properties == rhs.properties &&

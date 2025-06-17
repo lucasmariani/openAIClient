@@ -10,23 +10,23 @@ import Foundation
 // MARK: ModelResponseParameter
 
 /// [Create a model response](https://platform.openai.com/docs/api-reference/responses/create)
-public struct OAModelResponseParameter: Codable, Sendable {
+public struct ModelResponseParameter: Codable, Sendable {
     
     /// Initialize a new ModelResponseParameter
     public init(
-        input: OAInputType,
-        model: OAModel,
+        input: InputType,
+        model: Model,
         include: [String]? = nil,
         instructions: String? = nil,
         maxOutputTokens: Int? = nil,
         metadata: [String: String]? = nil,
         parallelToolCalls: Bool? = nil,
         previousResponseId: String? = nil,
-        reasoning: OAReasoning? = nil,
+        reasoning: Reasoning? = nil,
         store: Bool? = nil,
         stream: Bool? = nil,
         temperature: Double? = nil,
-        text: OATextConfiguration? = nil,
+        text: TextConfiguration? = nil,
         topP: Double? = nil,
         truncation: String? = nil,
         user: String? = nil)
@@ -52,7 +52,7 @@ public struct OAModelResponseParameter: Codable, Sendable {
     /// Text, image, or file inputs to the model, used to generate a response.
     /// A text input to the model, equivalent to a text input with the user role.
     /// A list of one or many input items to the [model](https://platform.openai.com/docs/models), containing different content types.
-    public var input: OAInputType
+    public var input: InputType
     
     /// Model ID used to generate the response, like gpt-4o or o1. OpenAI offers a wide range of models with
     /// different capabilities, performance characteristics, and price points.
@@ -89,7 +89,7 @@ public struct OAModelResponseParameter: Codable, Sendable {
     
     /// o-series models only
     /// Configuration options for [reasoning models](https://platform.openai.com/docs/guides/reasoning)
-    public var reasoning: OAReasoning?
+    public var reasoning: Reasoning?
     
     /// Defaults to true
     /// Whether to store the generated model response for later retrieval via API.
@@ -108,7 +108,7 @@ public struct OAModelResponseParameter: Codable, Sendable {
     /// Configuration options for a text response from the model. Can be plain text or structured JSON data. Learn more:
     /// [Text inputs and outputs](https://platform.openai.com/docs/guides/text)
     /// [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
-    public var text: OATextConfiguration?
+    public var text: TextConfiguration?
     
     /// Defaults to 1
     /// An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass.

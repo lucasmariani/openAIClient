@@ -42,7 +42,7 @@ class OAChatViewController: UIViewController {
     private var dataSource: UITableViewDiffableDataSource<Int, String>!
     
     private let chatDataManager: OAChatDataManager
-    private var currentlySelectedModel: OAModel?
+    private var currentlySelectedModel: Model?
     
     private var observationTask: Task<Void, Never>?
     
@@ -431,7 +431,7 @@ class OAChatViewController: UIViewController {
     
     @objc private func presentModelSelectionActionSheet() {
         let alert = UIAlertController(title: "Choose Model", message: nil, preferredStyle: .actionSheet)
-        for model in OAModel.allCases.sorted(by: { $0.displayName < $1.displayName }) {
+        for model in Model.allCases.sorted(by: { $0.displayName < $1.displayName }) {
             let isSelected = (self.chatDataManager.selectedModel == model)
             let action = UIAlertAction(
                 title: model.displayName + (isSelected ? " ✓" : ""),
@@ -451,7 +451,7 @@ class OAChatViewController: UIViewController {
     }
     
     private func makeModelSelectionMenu() -> UIMenu {
-        return UIMenu(title: "Choose Model", children: OAModel.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
+        return UIMenu(title: "Choose Model", children: Model.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
             let isSelected = (self.currentlySelectedModel == model)
             return UIAction(
                 title: model.displayName,

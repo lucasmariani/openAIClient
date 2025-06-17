@@ -24,7 +24,7 @@ enum ChatEvent {
 // MARK: - Repository Protocol
 
 @MainActor
-protocol ChatRepository {
+protocol OAChatRepository {
     // @Observable data manager for modern observation patterns
     var coreDataManager: OACoreDataManager { get }
 
@@ -43,10 +43,10 @@ protocol ChatRepository {
     func saveMessage(_ message: OAChatMessage, toChatId chatId: String) async throws
 
     // Streaming - simplified to just start streaming, events flow through main eventStream
-    func startStreaming(content: String, chatId: String, model: OAModel, attachments: [OAAttachment]) async throws
+    func startStreaming(content: String, chatId: String, model: Model, attachments: [OAAttachment]) async throws
 
     // Configuration
-    func updateChatModel(_ chatId: String, model: OAModel) async throws
+    func updateChatModel(_ chatId: String, model: Model) async throws
     func updateProvisionalText(_ chatId: String, text: String?) async throws
     func updateChatPreviousResponseId(_ chatId: String, responseId: String?) async throws
     func resetChatConversationContext(_ chatId: String) async throws
@@ -59,12 +59,12 @@ protocol ChatRepository {
 // MARK: - Repository Implementation
 
 @MainActor
-final class OAChatRepositoryImpl: ChatRepository {
+final class OAChatRepositoryImpl: OAChatRepository {
 
     // MARK: - Dependencies
 
     let coreDataManager: OACoreDataManager
-    private let streamProvider: OAResponseStreamProvider
+    private let streamingCoordinator: StreamingCoordinator
 
     // MARK: - Event Streaming
 
@@ -74,9 +74,9 @@ final class OAChatRepositoryImpl: ChatRepository {
 
     // MARK: - Initialization
 
-    init(coreDataManager: OACoreDataManager, streamProvider: OAResponseStreamProvider) {
+    init(coreDataManager: OACoreDataManager, streamingCoordinator: StreamingCoordinator) {
         self.coreDataManager = coreDataManager
-        self.streamProvider = streamProvider
+        self.streamingCoordinator = streamingCoordinator
 
         let (stream, continuation) = AsyncStream<ChatEvent>.makeStream()
         self.eventStream = stream
@@ -95,7 +95,7 @@ final class OAChatRepositoryImpl: ChatRepository {
 
     // MARK: - Simplified Single-Stream Architecture
 
-    func startStreaming(content: String, chatId: String, model: OAModel, attachments: [OAAttachment] = []) async throws {
+    func startStreaming(content: String, chatId: String, model: Model, attachments: [OAAttachment] = []) async throws {
         // Get the chat's current previousResponseId
         let currentChat = try await getChat(with: chatId)
         let previousResponseId = currentChat?.previousResponseId
@@ -103,7 +103,7 @@ final class OAChatRepositoryImpl: ChatRepository {
         // Get the actual conversation history for this chat
         let chatMessages = try await getMessages(for: chatId)
         let conversationHistory = chatMessages.map { chatMessage in
-            OAResponseMessage(
+            ResponseMessage(
                 role: chatMessage.role == .user ? .user : .assistant,
                 content: chatMessage.content,
                 timestamp: chatMessage.date,
@@ -111,94 +111,86 @@ final class OAChatRepositoryImpl: ChatRepository {
             )
         }
         
-        // Clear stream provider state to prevent cross-chat pollution
-        streamProvider.clearMessages()
+        // Clear streaming state to prevent cross-chat pollution
+        streamingCoordinator.clearMessages()
         
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
-            let streamEvents = streamProvider.streamEvents(for: content, attachments: attachments, previousResponseId: previousResponseId, conversationHistory: conversationHistory)
+            let streamEvents = streamingCoordinator.streamMessage(text: content, attachments: attachments, conversationHistory: conversationHistory, previousResponseId: previousResponseId)
             for await event in streamEvents {
                 guard !Task.isCancelled else { break }
 
                 switch event {
-                case .messageStarted(let responseMessage):
-                    // Convert to our chat message format
-                    let assistantMessage = OAChatMessage(
-                        id: responseMessage.responseId,
-                        role: .assistant,
-                        content: responseMessage.content,
-                        date: responseMessage.timestamp
-                    )
+                case .messageStarted(let message):
+                    print("🟡 ChatRepository Starting message with ID: \(message.id) for chat: \(chatId)")
 
-                    print("🟡 ChatRepository Starting message with ID: \(responseMessage.responseId) for chat: \(chatId)")
-
+                    let chatMessage = OAChatMessage(id: message.responseId,
+                                                    role: .assistant,
+                                                    content: message.content,
+                                                    date: message.timestamp)
                     // Save initial message to Core Data
                     do {
-                        try await coreDataManager.saveMessage(assistantMessage, toChatID: chatId, isStreaming: true)
+                        try await coreDataManager.saveMessage(chatMessage, toChatID: chatId, isStreaming: true)
                     } catch {
                         print("❌ Failed to save initial message to Core Data: \(error)")
                     }
 
                     // Emit to SINGLE event stream only
-                    eventContinuation.yield(.messageStarted(chatId: chatId, message: assistantMessage))
+                    eventContinuation.yield(.messageStarted(chatId: chatId, message: chatMessage))
 
-                case .messageUpdated(let responseMessage):
-                    print("🟡 Updating message with ID: \(responseMessage.responseId) for chat: \(chatId)")
+                case .messageUpdated(let message):
+                    print("🟡 Updating message with ID: \(message.id) for chat: \(chatId)")
 
-                    // Update in Core Data
+                    // Update in Core Data - create a response message for Core Data
+                    let responseMessage = OAChatMessage(id: message.responseId,
+                                                        role: .assistant,
+                                                        content: message.content,
+                                                        date: message.timestamp)
+
                     do {
                         try await coreDataManager.updateMessage(with: responseMessage,
                                                                 chatId: chatId,
                                                                 isStreaming: true)
                     } catch {
                         // Core Data update failed - log but continue streaming
-                        print("⚠️ Failed to update message \(responseMessage.responseId) in Core Data: \(error)")
+                        print("⚠️ Failed to update message \(responseMessage.id) in Core Data: \(error)")
                     }
 
-                    let updatedMessage = OAChatMessage(
-                        id: responseMessage.responseId,
-                        role: .assistant,
-                        content: responseMessage.content,
-                        date: responseMessage.timestamp
-                    )
-
                     // Emit to SINGLE event stream only
-                    eventContinuation.yield(.messageUpdated(chatId: chatId, message: updatedMessage))
+                    eventContinuation.yield(.messageUpdated(chatId: chatId, message: responseMessage))
 
-                case .messageCompleted(let responseMessage):
-                    print("🟢 ChatRepository Completing message with ID: \(responseMessage.responseId) for chat: \(chatId)")
+                case .messageCompleted(let message):
+                    print("🟢 ChatRepository Completing message with ID: \(message.id) for chat: \(chatId)")
 
-                    // Final update in Core Data
+                    // Final update in Core Data - create a response message for Core Data
+                    let responseMessage = OAChatMessage(id: message.responseId,
+                                                        role: .assistant,
+                                                        content: message.content,
+                                                        date: message.timestamp)
+
                     do {
                         try await coreDataManager.updateMessage(with: responseMessage,
                                                                 chatId: chatId,
                                                                 isStreaming: false)
                     } catch {
                         // Core Data update failed - log but complete streaming anyway
-                        print("⚠️ Failed to finalize message \(responseMessage.responseId) in Core Data: \(error)")
+                        print("⚠️ Failed to finalize message \(responseMessage.id) in Core Data: \(error)")
                     }
-                    
+
                     // Save the new previousResponseId to this chat
                     do {
-                        try await updateChatPreviousResponseId(chatId, responseId: responseMessage.responseId)
+                        try await updateChatPreviousResponseId(chatId, responseId: message.responseId)
                     } catch {
                         print("⚠️ Failed to update chat previousResponseId: \(error)")
                     }
 
-                    let completedMessage = OAChatMessage(
-                        id: responseMessage.responseId,
-                        role: .assistant,
-                        content: responseMessage.content,
-                        date: responseMessage.timestamp
-                    )
-
                     // Emit to SINGLE event stream only
-                    eventContinuation.yield(.messageCompleted(chatId: chatId, message: completedMessage))
+                    eventContinuation.yield(.messageCompleted(chatId: chatId, message: responseMessage))
 
                 case .streamError(let streamingError):
                     let structuredError = StructuredError.streamingFailed(
                         chatId: chatId,
-                        phase: "streamProvider",
+                        phase: "streamingCoordinator",
                         underlyingError: streamingError
                     )
 
@@ -251,7 +243,7 @@ final class OAChatRepositoryImpl: ChatRepository {
 
     // MARK: - Configuration
 
-    func updateChatModel(_ chatId: String, model: OAModel) async throws {
+    func updateChatModel(_ chatId: String, model: Model) async throws {
         try await coreDataManager.updateSelectedModelFor(chatId, model: model)
     }
 
@@ -268,11 +260,11 @@ final class OAChatRepositoryImpl: ChatRepository {
     }
     
     func clearStreamProviderState() async {
-        streamProvider.clearMessages()
+        streamingCoordinator.clearMessages()
     }
 
     func generateChatTitle(userMessage: String, assistantMessage: String, chatId: String) async throws {
-        let generatedTitle = try await streamProvider.generateTitle(userMessage: userMessage, assistantMessage: assistantMessage)
+        let generatedTitle = try await streamingCoordinator.generateTitle(userMessage: userMessage, assistantMessage: assistantMessage)
         try await coreDataManager.updateChatTitle(chatId, title: generatedTitle)
     }
 }

@@ -1,5 +1,5 @@
 //
-//  OAResponseStreamEvent.swift
+//  ResponseStreamEvent.swift
 //  openAIClient
 //
 //  Created by Lucas on 12.06.25.
@@ -10,7 +10,7 @@ import Foundation
 // MARK: - ResponseStreamEvent
 
 /// Represents all possible streaming events from the Responses API
-public enum OAResponseStreamEvent: Decodable {
+public enum ResponseStreamEvent: Decodable {
     /// Emitted when a response is created
     case responseCreated(ResponseCreatedEvent)
     
@@ -54,7 +54,7 @@ public enum OAResponseStreamEvent: Decodable {
     case refusalDone(RefusalDoneEvent)
     
     /// Emitted when an error occurs
-    case error(OAErrorEvent)
+    case error(ErrorEvent)
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -148,7 +148,7 @@ public enum OAResponseStreamEvent: Decodable {
             //    case "response.reasoning_summary.done":
             //      self = try .reasoningSummaryDone(ReasoningSummaryDoneEvent(from: decoder))
         case "error":
-            self = try .error(OAErrorEvent(from: decoder))
+            self = try .error(ErrorEvent(from: decoder))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type,
@@ -167,7 +167,7 @@ public enum OAResponseStreamEvent: Decodable {
 /// Emitted when a response is created
 public struct ResponseCreatedEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -182,7 +182,7 @@ public struct ResponseCreatedEvent: Decodable {
 /// Emitted when the response is in progress
 public struct ResponseInProgressEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -197,7 +197,7 @@ public struct ResponseInProgressEvent: Decodable {
 /// Emitted when the model response is complete
 public struct ResponseCompletedEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -212,7 +212,7 @@ public struct ResponseCompletedEvent: Decodable {
 /// Emitted when a response fails
 public struct ResponseFailedEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -227,7 +227,7 @@ public struct ResponseFailedEvent: Decodable {
 /// Emitted when a response finishes as incomplete
 public struct ResponseIncompleteEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -242,7 +242,7 @@ public struct ResponseIncompleteEvent: Decodable {
 /// Emitted when a response is queued
 public struct ResponseQueuedEvent: Decodable {
     public let type: String
-    public let response: OAResponseModel
+    public let response: ResponseModel
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -258,7 +258,7 @@ public struct ResponseQueuedEvent: Decodable {
 public struct OutputItemAddedEvent: Decodable {
     public let type: String
     public let outputIndex: Int
-    public let item: OAStreamOutputItem
+    public let item: StreamOutputItem
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -275,7 +275,7 @@ public struct OutputItemAddedEvent: Decodable {
 public struct OutputItemDoneEvent: Decodable {
     public let type: String
     public let outputIndex: Int
-    public let item: OAStreamOutputItem
+    public let item: StreamOutputItem
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -294,7 +294,7 @@ public struct ContentPartAddedEvent: Decodable {
     public let itemId: String
     public let outputIndex: Int
     public let contentIndex: Int
-    public let part: OAContentPart
+    public let part: ContentPart
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -315,7 +315,7 @@ public struct ContentPartDoneEvent: Decodable {
     public let itemId: String
     public let outputIndex: Int
     public let contentIndex: Int
-    public let part: OAContentPart
+    public let part: ContentPart
     public let sequenceNumber: Int?
     
     enum CodingKeys: String, CodingKey {
@@ -415,7 +415,7 @@ public struct RefusalDoneEvent: Decodable {
 // MARK: - ErrorEvent
 
 /// Emitted when an error occurs
-public struct OAErrorEvent: Decodable {
+public struct ErrorEvent: Decodable {
     public let type: String
     public let code: String?
     public let message: String
@@ -434,15 +434,15 @@ public struct OAErrorEvent: Decodable {
 // MARK: - StreamOutputItem
 
 /// Stream output item (simplified version for streaming)
-public struct OAStreamOutputItem: Decodable {
+public struct StreamOutputItem: Decodable {
     public let id: String
     public let type: String
     public let status: String?
     public let role: String?
-    public let content: [OAOutputItem.OAContentItem]?
+    public let content: [OutputItem.ContentItem]?
 }
 
-public struct OAContentPart: Decodable {
+public struct ContentPart: Decodable {
     public let type: String
     public let text: String?
     public let annotations: [Any]?
