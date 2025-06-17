@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OpenAIForSwift
 
 struct OAChat: Codable, Sendable, Hashable {
     let id: String

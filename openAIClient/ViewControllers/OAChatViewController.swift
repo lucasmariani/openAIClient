@@ -8,6 +8,7 @@
 import UIKit
 import Observation
 import UniformTypeIdentifiers
+import OpenAIForSwift
 
 class OAChatViewController: UIViewController {
     

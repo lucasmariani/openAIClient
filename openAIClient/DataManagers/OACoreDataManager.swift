@@ -7,6 +7,7 @@
 
 import CoreData
 import Observation
+import OpenAIForSwift
 
 // MARK: - Core Data Change Delegate
 

@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import OpenAIForSwift
 
 // MARK: - Chat Events
 
@@ -99,25 +100,14 @@ final class OAChatRepositoryImpl: OAChatRepository {
         // Get the chat's current previousResponseId
         let currentChat = try await getChat(with: chatId)
         let previousResponseId = currentChat?.previousResponseId
-        
-        // Get the actual conversation history for this chat
-        let chatMessages = try await getMessages(for: chatId)
-        let conversationHistory = chatMessages.map { chatMessage in
-            ResponseMessage(
-                role: chatMessage.role == .user ? .user : .assistant,
-                content: chatMessage.content,
-                timestamp: chatMessage.date,
-                responseId: chatMessage.id
-            )
-        }
-        
+
         // Clear streaming state to prevent cross-chat pollution
         streamingCoordinator.clearMessages()
         
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
             let streamEvents = streamingCoordinator.streamMessage(text: content,
-                                                                  attachments: attachments,
+                                                                  attachments: attachments.map { $0.fileAttachment(from: $0)},
                                                                   previousResponseId: previousResponseId)
             for await event in streamEvents {
                 guard !Task.isCancelled else { break }

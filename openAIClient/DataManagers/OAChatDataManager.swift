@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import OpenAIForSwift
 
 enum ChatViewState {
     case empty

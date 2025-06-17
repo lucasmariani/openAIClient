@@ -7,6 +7,7 @@
 
 import UIKit
 import CoreData
+import OpenAIForSwift
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 

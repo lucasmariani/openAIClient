@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */ = {isa = PBXBuildFile; productRef = A07A793B2DF5C0C5006540A8 /* Highlightr */; };
+		A0E0F33B2E019EDC00E7D75F /* OpenAIForSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A0E0F33A2E019EDC00E7D75F /* OpenAIForSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A0E0F33B2E019EDC00E7D75F /* OpenAIForSwift in Frameworks */,
 				A07A793C2DF5C0C5006540A8 /* Highlightr in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -92,6 +94,7 @@
 			name = openAIClient;
 			packageProductDependencies = (
 				A07A793B2DF5C0C5006540A8 /* Highlightr */,
+				A0E0F33A2E019EDC00E7D75F /* OpenAIForSwift */,
 			);
 			productName = openAIClient;
 			productReference = A01FFDCD2DD79870004FD53C /* openAIClient.app */;
@@ -123,6 +126,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */,
+				A0E0F3392E019EDC00E7D75F /* XCLocalSwiftPackageReference "../OpenAIForSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A01FFDCE2DD79870004FD53C /* Products */;
@@ -371,6 +375,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		A0E0F3392E019EDC00E7D75F /* XCLocalSwiftPackageReference "../OpenAIForSwift" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../OpenAIForSwift;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -387,6 +398,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A07A793A2DF5C0C5006540A8 /* XCRemoteSwiftPackageReference "Highlightr" */;
 			productName = Highlightr;
+		};
+		A0E0F33A2E019EDC00E7D75F /* OpenAIForSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenAIForSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

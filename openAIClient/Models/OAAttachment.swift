@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import OpenAIForSwift
 
 public struct OAAttachment: Codable, Sendable, Hashable {
     public let id: String
@@ -36,7 +37,15 @@ public struct OAAttachment: Codable, Sendable, Hashable {
         self.data = data
         self.thumbnailData = attachment.thumbnailData
     }
-    
+
+    func fileAttachment(from attachment: OAAttachment) -> FileAttachment {
+        FileAttachment(id: attachment.id,
+                       filename: attachment.filename,
+                       mimeType: attachment.mimeType,
+                       data: attachment.data,
+                       thumbnailData: attachment.thumbnailData)
+    }
+
     public var isImage: Bool {
         mimeType.hasPrefix("image/")
     }
