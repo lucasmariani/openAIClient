@@ -42,7 +42,6 @@ public struct NetworkingStreamProvider: Sendable {
         for text: String,
         model: Model,
         attachments: [OAAttachment] = [],
-        conversationHistory: [ResponseMessage] = [],
         previousResponseId: String? = nil,
         instructions: String = "You are a helpful assistant. Use the conversation history to provide contextual responses.",
         maxOutputTokens: Int = 1000,
@@ -55,7 +54,6 @@ public struct NetworkingStreamProvider: Sendable {
                     text: text,
                     model: model,
                     attachments: attachments,
-                    conversationHistory: conversationHistory,
                     previousResponseId: previousResponseId,
                     instructions: instructions,
                     maxOutputTokens: maxOutputTokens,
@@ -111,7 +109,6 @@ public struct NetworkingStreamProvider: Sendable {
         text: String,
         model: Model,
         attachments: [OAAttachment],
-        conversationHistory: [ResponseMessage],
         previousResponseId: String?,
         instructions: String,
         maxOutputTokens: Int,
@@ -124,7 +121,6 @@ public struct NetworkingStreamProvider: Sendable {
                 text: text,
                 model: model,
                 attachments: attachments,
-                conversationHistory: conversationHistory,
                 previousResponseId: previousResponseId,
                 instructions: instructions,
                 maxOutputTokens: maxOutputTokens,
@@ -202,7 +198,6 @@ public struct NetworkingStreamProvider: Sendable {
         text: String,
         model: Model,
         attachments: [OAAttachment],
-        conversationHistory: [ResponseMessage],
         previousResponseId: String?,
         instructions: String,
         maxOutputTokens: Int,
@@ -210,20 +205,6 @@ public struct NetworkingStreamProvider: Sendable {
     ) throws -> ModelResponseParameter {
         // Build conversation input
         var inputArray: [InputItem] = []
-        
-        // Add conversation history
-        for message in conversationHistory {
-            guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                  !message.isStreaming else { continue }
-            
-            let content = message.content
-            switch message.role {
-            case .user:
-                inputArray.append(.message(InputMessage(role: "user", content: .text(content))))
-            case .assistant:
-                inputArray.append(.message(InputMessage(role: "assistant", content: .text(content))))
-            }
-        }
         
         // Add current user message with attachments
         let currentUserMessage = try createUserInputMessage(text: text, attachments: attachments)

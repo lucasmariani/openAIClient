@@ -116,7 +116,9 @@ final class OAChatRepositoryImpl: OAChatRepository {
         
         // Start streaming task that feeds events into the main eventStream only
         Task { @MainActor in
-            let streamEvents = streamingCoordinator.streamMessage(text: content, attachments: attachments, conversationHistory: conversationHistory, previousResponseId: previousResponseId)
+            let streamEvents = streamingCoordinator.streamMessage(text: content,
+                                                                  attachments: attachments,
+                                                                  previousResponseId: previousResponseId)
             for await event in streamEvents {
                 guard !Task.isCancelled else { break }
 

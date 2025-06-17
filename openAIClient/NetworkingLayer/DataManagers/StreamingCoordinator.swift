@@ -70,7 +70,6 @@ public final class StreamingCoordinator {
     public func streamMessage(
         text: String,
         attachments: [OAAttachment] = [],
-        conversationHistory: [ResponseMessage] = [],
         previousResponseId: String? = nil
     ) -> AsyncStream<UIStreamEvent> {
         
@@ -79,7 +78,6 @@ public final class StreamingCoordinator {
                 await performUIStreaming(
                     text: text,
                     attachments: attachments,
-                    conversationHistory: conversationHistory,
                     previousResponseId: previousResponseId,
                     continuation: continuation
                 )
@@ -106,7 +104,6 @@ public final class StreamingCoordinator {
     private func performUIStreaming(
         text: String,
         attachments: [OAAttachment],
-        conversationHistory: [ResponseMessage],
         previousResponseId: String?,
         continuation: AsyncStream<UIStreamEvent>.Continuation
     ) async {
@@ -131,7 +128,6 @@ public final class StreamingCoordinator {
                 for: text,
                 model: model,
                 attachments: attachments,
-                conversationHistory: conversationHistory,
                 previousResponseId: previousResponseId
             )
             
