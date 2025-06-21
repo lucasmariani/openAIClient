@@ -42,15 +42,15 @@ class OAChatViewController: UIViewController {
     
     private var dataSource: UITableViewDiffableDataSource<Int, String>!
     
-    private let chatDataManager: OAChatDataManager
+    private let chatManager: OAChatManager
     private var currentlySelectedModel: Model?
     
     private var observationTask: Task<Void, Never>?
     
-    init(chatDataManager: OAChatDataManager) {
-        self.chatDataManager = chatDataManager
+    init(chatManager: OAChatManager) {
+        self.chatManager = chatManager
         super.init(nibName: nil, bundle: nil)
-        self.currentlySelectedModel = self.chatDataManager.selectedModel
+        self.currentlySelectedModel = self.chatManager.selectedModel
     }
     
     required init?(coder: NSCoder) { fatalError() }
@@ -68,7 +68,7 @@ class OAChatViewController: UIViewController {
         self.setupSubviews()
         self.setupDataSource()
         self.setupNavBar()
-        self.chatDataManager.loadLatestChat()
+        self.chatManager.loadLatestChat()
         
         startObservation()
     }
@@ -240,7 +240,7 @@ class OAChatViewController: UIViewController {
                 return UITableViewCell()
             }
             
-            if case .chat(_, let messages, _, _) = self.chatDataManager.viewState,
+            if case .chat(_, let messages, _, _) = self.chatManager.viewState,
                let message = messages.first(where: { $0.id == messageID }) {
                 cell.configure(with: message)
             } else {
@@ -255,7 +255,7 @@ class OAChatViewController: UIViewController {
         observationTask?.cancel()
         observationTask = Task { @MainActor in
             // Use the clean AsyncStream from ChatDataManager
-            for await event in chatDataManager.uiEventStream {
+            for await event in chatManager.uiEventStream {
                 guard !Task.isCancelled else { break }
                 
                 switch event {
@@ -304,7 +304,7 @@ class OAChatViewController: UIViewController {
     
     
     private func updateModelSelection() {
-        currentlySelectedModel = chatDataManager.selectedModel
+        currentlySelectedModel = chatManager.selectedModel
         guard OAPlatform.isMacCatalyst,
               let button = navigationItem.rightBarButtonItem else { return }
         button.menu = makeModelSelectionMenu()
@@ -349,7 +349,7 @@ class OAChatViewController: UIViewController {
     }
     
     private func scrollToBottomIfNeeded() {
-        guard case .chat(_, let messages, _, _) = chatDataManager.viewState, !messages.isEmpty else { return }
+        guard case .chat(_, let messages, _, _) = chatManager.viewState, !messages.isEmpty else { return }
         
         Task { @MainActor in
             let lastIndexPath = IndexPath(item: messages.count - 1, section: 0)
@@ -361,8 +361,8 @@ class OAChatViewController: UIViewController {
     }
     
     func loadChat(with id: String) async {
-        await self.chatDataManager.saveProvisionalTextInput(self.inputTextView.text)
-        if let chat = await self.chatDataManager.loadChat(with: id) {
+        await self.chatManager.saveProvisionalTextInput(self.inputTextView.text)
+        if let chat = await self.chatManager.loadChat(with: id) {
             print("Debug: Successfully loaded chat: \(chat.title)")
             self.inputTextView.text = chat.provisionaryInputText ?? ""
         } else {
@@ -393,7 +393,7 @@ class OAChatViewController: UIViewController {
         self.inputTextView.text = ""
         self.pendingAttachments.removeAll()
         self.updateAttachmentDisplay()
-        self.chatDataManager.sendMessage(newMessage)
+        self.chatManager.sendMessage(newMessage)
     }
     
     @objc private func didTapAttachButton() {
@@ -418,7 +418,7 @@ class OAChatViewController: UIViewController {
         
         // Update send button state
         let hasContent = !(inputTextView.text?.isEmpty ?? true) || !pendingAttachments.isEmpty
-        if case .chat(_, _, _, let isStreaming) = chatDataManager.viewState {
+        if case .chat(_, _, _, let isStreaming) = chatManager.viewState {
             sendButton.isEnabled = !isStreaming && hasContent
         }
     }
@@ -435,13 +435,13 @@ class OAChatViewController: UIViewController {
     @objc private func presentModelSelectionActionSheet() {
         let alert = UIAlertController(title: "Choose Model", message: nil, preferredStyle: .actionSheet)
         for model in Model.allCases.sorted(by: { $0.displayName < $1.displayName }) {
-            let isSelected = (self.chatDataManager.selectedModel == model)
+            let isSelected = (self.chatManager.selectedModel == model)
             let action = UIAlertAction(
                 title: model.displayName + (isSelected ? " ✓" : ""),
                 style: .default
             ) { [weak self] _ in
                 Task {
-                    await self?.chatDataManager.updateModel(model)
+                    await self?.chatManager.updateModel(model)
                 }
             }
             alert.addAction(action)
@@ -461,7 +461,7 @@ class OAChatViewController: UIViewController {
                 state: isSelected ? .on : .off
             ) { [weak self] _ in
                 Task {
-                    await self?.chatDataManager.updateModel(model)
+                    await self?.chatManager.updateModel(model)
                 }
             }
         })

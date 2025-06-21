@@ -11,7 +11,7 @@ import Observation
 class OASidebarViewController: UIViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
-    private let chatDataManager: OAChatDataManager
+    private let chatManager: OAChatManager
 //    private var observationTask: Task<Void, Never>?
 
     // Selection mode properties
@@ -37,8 +37,8 @@ class OASidebarViewController: UIViewController {
         case chat(OAChat) // Full chat object
     }
 
-    init(chatDataManager: OAChatDataManager) {
-        self.chatDataManager = chatDataManager
+    init(chatManager: OAChatManager) {
+        self.chatManager = chatManager
         super.init(nibName: nil, bundle: nil)
         self.title = "Chats"
     }
@@ -118,7 +118,7 @@ class OASidebarViewController: UIViewController {
             let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
                 Task {
                     do {
-                        try await self.chatDataManager.deleteChat(with: chat.id)
+                        try await self.chatManager.deleteChat(with: chat.id)
                         completion(true)
                     } catch {
                         await MainActor.run {
@@ -189,7 +189,7 @@ class OASidebarViewController: UIViewController {
         super.viewWillLayoutSubviews()
         updateEditButtonState()
         Task { @MainActor in
-            self.updateSnapshot(with: self.chatDataManager.chats)
+            self.updateSnapshot(with: self.chatManager.chats)
 //            if self.chatDataManager.chats.count == 1 {
 //                self.selectLatestChat()
 //            }
@@ -208,7 +208,7 @@ class OASidebarViewController: UIViewController {
     }
 
     private func selectLatestChat() {
-        let chats = chatDataManager.chats
+        let chats = chatManager.chats
         guard !chats.isEmpty else { return }
 
         let indexPath = IndexPath(item: 0, section: 0)
@@ -218,7 +218,7 @@ class OASidebarViewController: UIViewController {
 
     @objc private func addNewChat() async {
         do {
-            try await chatDataManager.createNewChat()
+            try await chatManager.createNewChat()
         } catch {
             await MainActor.run {
                 showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
@@ -245,7 +245,7 @@ class OASidebarViewController: UIViewController {
     func restoreButtonsConfiguration() {
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
             self.navigationItem.rightBarButtonItems = [self.addButton]
-            if !self.chatDataManager.chats.isEmpty {
+            if !self.chatManager.chats.isEmpty {
                 self.toolbarItems = [self.flexibleSpace, self.selectButton]
             } else {
                 self.toolbarItems = []
@@ -374,7 +374,7 @@ class OASidebarViewController: UIViewController {
     private func performBatchDelete(chats: [OAChat]) async {
         do {
             let chatIds = chats.map { $0.id }
-            try await chatDataManager.deleteChats(with: chatIds)
+            try await chatManager.deleteChats(with: chatIds)
 
             await MainActor.run {
                 setEditing(false, animated: true)
@@ -430,7 +430,7 @@ extension OASidebarViewController: UICollectionViewDelegate {
             let deleteAction = UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
                 Task {
                     do {
-                        try await self?.chatDataManager.deleteChat(with: chat.id)
+                        try await self?.chatManager.deleteChat(with: chat.id)
                     } catch {
                         await MainActor.run {
                             self?.showErrorAlert(message: "Failed to delete chat: \(error.localizedDescription)")

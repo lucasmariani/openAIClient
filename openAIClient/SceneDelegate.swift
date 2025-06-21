@@ -12,9 +12,8 @@ import OpenAIForSwift
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     var window: UIWindow?
-    private var chatDataManager: OAChatDataManager?
+    private var chatManager: OAChatManager?
     private var coreDataManager: OACoreDataManager?
-    private var repository: OAChatRepository?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         // Use this method to optionally configure and attach the UIWindow `window` to the provided UIWindowScene `scene`.
@@ -33,7 +32,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         Task {
             let coreDataManager = await OACoreDataManager()
 
-            // Create single repository instance shared by both components
+            // Create streamingCoordinator and chatManager
             guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
                 fatalError("Error retrieving API_KEY")
             }
@@ -41,20 +40,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let service = OpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
             let streamProvider = NetworkingStreamProvider(service: service)
             let coordinator = StreamingCoordinator(networkingProvider: streamProvider, model: .gpt41nano)
-            let repository = OAChatRepositoryImpl(coreDataManager: coreDataManager, streamingCoordinator: coordinator)
 
             await MainActor.run {
-                let chatDataManager = OAChatDataManager(repository: repository)
+                let chatManager = OAChatManager(coreDataManager: coreDataManager, streamingCoordinator: coordinator)
 
                 // Store references for lifecycle management
                 self.coreDataManager = coreDataManager
-                self.chatDataManager = chatDataManager
-                self.repository = repository
+                self.chatManager = chatManager
 
-                let sidebar = OASidebarViewController(chatDataManager: chatDataManager)
+                let sidebar = OASidebarViewController(chatManager: chatManager)
                 let sidebarNav = UINavigationController(rootViewController: sidebar)
 
-                let chatVC = OAChatViewController(chatDataManager: chatDataManager)
+                let chatVC = OAChatViewController(chatManager: chatManager)
                 let detailNav = UINavigationController(rootViewController: chatVC)
 
                 splitViewController.setViewController(sidebarNav, for: .primary)
