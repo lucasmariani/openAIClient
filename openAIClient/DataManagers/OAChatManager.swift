@@ -226,6 +226,7 @@ final class OAChatManager {
                     //                    do {
                     let streamEvents = streamingCoordinator.streamMessage(
                         text: chatMessage.content,
+                        model: selectedModel,
                         attachments: chatMessage.attachments.map { $0.fileAttachment(from: $0) },
                         previousResponseId: previousResponseId,
                         webSearchEnabled: webSearchEnabled,
@@ -391,6 +392,17 @@ final class OAChatManager {
 
         case .streamError(let error):
             handleStreamingError(error, chatId: chatId)
+            //TODO: handle these new events.
+        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
+            break
+        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
+            break
+        case .functionCallArgumentsDone(callId: let callId, arguments: let arguments):
+            break
+        case .reasoningDelta(delta: let delta):
+            break
+        case .reasoningDone(reasoning: let reasoning):
+            break
         }
     }
 

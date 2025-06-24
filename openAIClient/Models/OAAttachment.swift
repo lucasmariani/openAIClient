@@ -2,7 +2,7 @@
 //  OAAttachment.swift
 //  openAIClient
 //
-//  Created by Claude on 15.06.25.
+//  Created by Lucas on 15.06.25.
 //
 
 import Foundation

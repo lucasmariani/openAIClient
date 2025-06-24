@@ -39,7 +39,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             let configuration = URLSessionConfiguration.default
             let service = OpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
             let streamProvider = NetworkingStreamProvider(service: service)
-            let coordinator = StreamingCoordinator(networkingProvider: streamProvider, model: .gpt41nano)
+            let coordinator = StreamingCoordinator(networkingProvider: streamProvider)
 
             await MainActor.run {
                 let chatManager = OAChatManager(coreDataManager: coreDataManager, streamingCoordinator: coordinator)

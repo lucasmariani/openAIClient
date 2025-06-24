@@ -109,6 +109,12 @@ class OAChatViewController: UIViewController {
                     print("📱 Event received: modelChanged(\(model.displayName))")
                     Task { @MainActor in
                         self.currentlySelectedModel = model
+                        
+                        // Automatically disable web search if new model doesn't support it
+                        if !model.capabilities.supportsWebSearch && chatManager.webSearchEnabled {
+                            chatManager.setWebSearchEnabled(false)
+                        }
+                        
                         self.modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"), menu: createPersistentMenu())
                         navigationItem.rightBarButtonItems?.removeFirst()
                         navigationItem.rightBarButtonItems?.insert(self.modelButton, at: 0)
@@ -284,10 +290,7 @@ class OAChatViewController: UIViewController {
         // Remove existing center Y constraints if they exist
         attachButtonCenterYConstraint?.isActive = false
         sendButtonCenterYConstraint?.isActive = false
-        
-        // Calculate the optimal Y position for buttons based on text content
-//        let buttonYPosition = calculateButtonYPosition()
-        
+
         // Set up new constraints based on calculated position
         attachButtonCenterYConstraint = attachButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor)
         sendButtonCenterYConstraint = sendButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor)
@@ -295,21 +298,6 @@ class OAChatViewController: UIViewController {
         attachButtonCenterYConstraint?.isActive = true
         sendButtonCenterYConstraint?.isActive = true
     }
-    
-//    private func calculateButtonYPosition() -> CGFloat {
-//        let textView = inputTextView
-//        let font = textView.font ?? UIFont.systemFont(ofSize: 16)
-//        let lineHeight = font.lineHeight
-//        let textContainerInsetTop = textView.textContainerInset.top
-//        
-//        // For single line or when starting fresh, center the button to the first line
-//        let buttonHeight: CGFloat = 32
-//        let idealCenterY = textContainerInsetTop + (lineHeight / 2)
-//        let buttonTopPosition = idealCenterY - (buttonHeight / 2)
-//        
-//        // Ensure minimum spacing from container top
-//        return max(buttonTopPosition, 8)
-//    }
 
     @MainActor
     private func updateUI(for state: ChatViewState) {
@@ -379,15 +367,27 @@ class OAChatViewController: UIViewController {
     }
 
     @objc private func didTapWebSearchButton() {
+        // Only allow toggle if current model supports web search
+        guard currentlySelectedModel?.capabilities.supportsWebSearch == true else { return }
+        
         chatManager.toggleWebSearch()
         updateNavigationButtonStates()
     }
 
     private func updateNavigationButtonStates() {
-        // Update web search button appearance using direct reference
+        // Check if current model supports web search
+        let supportsWebSearch = currentlySelectedModel?.capabilities.supportsWebSearch ?? false
+        
+        // Update web search button appearance and state
         let imageName = chatManager.webSearchEnabled ? "globe.fill" : "globe"
         webSearchButton.image = UIImage(systemName: imageName)
-        webSearchButton.tintColor = chatManager.webSearchEnabled ? .systemBlue : .label
+        
+        if supportsWebSearch {
+            webSearchButton.tintColor = chatManager.webSearchEnabled ? .systemBlue : .label
+        } else {
+            webSearchButton.tintColor = .systemGray3
+        }
+        webSearchButton.isEnabled = supportsWebSearch
         
         // Disable model selection when no chat is loaded
         let hasCurrentChat = chatManager.viewState.currentChatId != nil
