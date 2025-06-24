@@ -63,6 +63,19 @@ final class OACoreDataManager {
             let req: NSFetchRequest<Chat> = Chat.fetchRequest()
             req.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
             let chats = try context.fetch(req)
+            
+            // Migration: Update chats that don't have selectedModel set
+            var updatedAny = false
+            for chat in chats where chat.selectedModel == nil {
+                chat.selectedModel = "gpt-4.1-nano"
+                updatedAny = true
+            }
+            
+            // Save changes if any migration updates were made
+            if updatedAny {
+                try context.save()
+            }
+            
             return chats.compactMap { OAChat(chat: $0) }
         }
 
@@ -94,6 +107,7 @@ final class OACoreDataManager {
             chat.id = UUID().uuidString
             chat.date = chatDate
             chat.title = "New Chat \(formattedTimestamp)"
+            chat.selectedModel = Model.gpt41nano.value // Set default model for new chats
             return () // Explicit return for Sendable compliance
         }
 

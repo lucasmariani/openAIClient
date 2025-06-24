@@ -27,7 +27,8 @@ extension OAChat {
         self.date = date
         self.title = chat.title ?? "No title"
         self.provisionaryInputText = chat.provisionaryInputText
-        self.selectedModel = Model(value: chat.selectedModel ?? "gpt-4.1-nano")
+        // Handle migration: use gpt-4.1-nano as default for existing chats without selectedModel
+        self.selectedModel = Model(value: chat.selectedModel ?? Model.gpt41nano.value)
         self.previousResponseId = chat.previousResponseId
         self.messages = []
     }

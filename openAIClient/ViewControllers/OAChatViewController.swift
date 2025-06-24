@@ -11,12 +11,12 @@ import UniformTypeIdentifiers
 import OpenAIForSwift
 
 class OAChatViewController: UIViewController {
-    
+
     private enum ChatStateIdentifier: String {
         case emptyPlaceholder
         case errorPlaceholder
     }
-    
+
     private struct Constants {
         static let emptyPlaceholder = ChatStateIdentifier.emptyPlaceholder.rawValue
         static let errorPlaceholder = ChatStateIdentifier.errorPlaceholder.rawValue
@@ -24,10 +24,10 @@ class OAChatViewController: UIViewController {
         static let errorPlaceholderText = "Error loading chat"
         static let streamingPlacerholderText = "Streaming response..."
         static let loadedPlaceholderText = "Type a message..."
-        
+
         static let cellId = "chatMessageCell"
     }
-    
+
     private let tableView = UITableView()
     private let inputTextView = UITextView()
     private let sendButton = UIButton(type: .system)
@@ -35,30 +35,37 @@ class OAChatViewController: UIViewController {
     private let attachmentCollectionView = OAAttachmentCollectionView()
     private let inputContainerView = UIView()
     private let textInputContainerView = UIView()
-    
+
+    // Strong references to navigation bar buttons for reliable state management
+    private var modelButton: UIBarButtonItem!
+    private var webSearchButton: UIBarButtonItem!
+
     private var pendingAttachments: [OAAttachment] = []
-    
+
     private var inputContainerBottomConstraint: NSLayoutConstraint?
-    
+
     private var dataSource: UITableViewDiffableDataSource<Int, String>!
-    
+
     private let chatManager: OAChatManager
+
     private var currentlySelectedModel: Model?
-    
+
+    private var modelMenu: UIMenu?
+
     private var observationTask: Task<Void, Never>?
-    
-    init(chatManager: OAChatManager) {
+
+    required init(chatManager: OAChatManager) {
         self.chatManager = chatManager
         super.init(nibName: nil, bundle: nil)
         self.currentlySelectedModel = self.chatManager.selectedModel
     }
-    
+
     required init?(coder: NSCoder) { fatalError() }
-    
+
     deinit {
         observationTask?.cancel()
     }
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
         self.view.backgroundColor = .systemBackground
@@ -69,52 +76,98 @@ class OAChatViewController: UIViewController {
         self.setupDataSource()
         self.setupNavBar()
         self.chatManager.loadLatestChat()
-        
+
         startObservation()
     }
-    
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         setupKeyboardObservers()
-        
+
     }
-    
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         removeKeyboardObservers()
     }
-    
+
+    private func startObservation() {
+        observationTask?.cancel()
+        observationTask = Task { @MainActor in
+            // Use the clean AsyncStream from ChatDataManager
+            for await event in chatManager.uiEventStream {
+                guard !Task.isCancelled else { break }
+
+                switch event {
+                case .viewStateChanged(let newState):
+                    updateUI(for: newState)
+                    updateNavigationButtonStates()
+                case .modelChanged(let model):
+                    print("📱 Event received: modelChanged(\(model.displayName))")
+                    Task { @MainActor in
+                        self.currentlySelectedModel = model
+                        self.modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"), menu: createPersistentMenu())
+                        navigationItem.rightBarButtonItems?.removeFirst()
+                        navigationItem.rightBarButtonItems?.insert(self.modelButton, at: 0)
+                        updateNavigationButtonStates()
+                    }
+                case .showErrorAlert(let errorMessage):
+                    showErrorAlert(errorMessage)
+                }
+            }
+        }
+    }
+
+    func loadChat(with id: String) async {
+        await self.chatManager.saveProvisionalTextInput(self.inputTextView.text)
+        if let chat = await self.chatManager.loadChat(with: id) {
+            print("Debug: Successfully loaded chat: \(chat.title)")
+            self.inputTextView.text = chat.provisionaryInputText ?? ""
+        } else {
+            print("Debug: Failed to load chat with ID: \(id)")
+        }
+
+        // Clear attachments when switching chats
+        pendingAttachments.removeAll()
+        updateAttachmentDisplay()
+    }
+
+    // MARK: UI
+
+    @MainActor
     private func setupNavBar() {
         self.title = nil
         self.navigationItem.largeTitleDisplayMode = .never
-        
-        let modelButton = UIBarButtonItem(
-            image: UIImage(systemName: "brain.head.profile"),
+
+        // Configure model button completely before adding to UI
+        modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"),
+                                      menu: createPersistentMenu())
+
+        // Configure web search button completely before adding to UI
+        webSearchButton = UIBarButtonItem(
+            image: UIImage(systemName: "globe"),
             style: .plain,
-            target: nil,
-            action: nil
+            target: self,
+            action: #selector(didTapWebSearchButton)
         )
-        navigationItem.rightBarButtonItem = modelButton
-        
-        if OAPlatform.isMacCatalyst {
-            modelButton.menu = makeModelSelectionMenu()
-        }
-//        else {
-            modelButton.target = self
-            modelButton.action = #selector(didTapModelButton)
-//        }
+
+        // Add fully configured buttons to navigation bar
+        navigationItem.rightBarButtonItems = [modelButton, webSearchButton]
+
+        // Update button appearances with current state
+        updateNavigationButtonStates()
     }
-    
+
     private func setupSubviews() {
         // Input Container
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
-        
+
         // Attachment Collection View
         attachmentCollectionView.translatesAutoresizingMaskIntoConstraints = false
         attachmentCollectionView.isHidden = true
         inputContainerView.addSubview(attachmentCollectionView)
-        
+
         // Text Input Container
         textInputContainerView.translatesAutoresizingMaskIntoConstraints = false
         textInputContainerView.layer.cornerRadius = 20
@@ -122,7 +175,7 @@ class OAChatViewController: UIViewController {
         textInputContainerView.layer.borderColor = UIColor.systemGray4.cgColor
         textInputContainerView.backgroundColor = .systemGray6
         inputContainerView.addSubview(textInputContainerView)
-        
+
         // Attach Button
         attachButton.translatesAutoresizingMaskIntoConstraints = false
         let attachConfig = UIImage.SymbolConfiguration(scale: .medium)
@@ -131,7 +184,7 @@ class OAChatViewController: UIViewController {
         attachButton.tintColor = .systemGray
         attachButton.addTarget(self, action: #selector(didTapAttachButton), for: .touchUpInside)
         textInputContainerView.addSubview(attachButton)
-        
+
         // Input TextView
         inputTextView.translatesAutoresizingMaskIntoConstraints = false
         inputTextView.isScrollEnabled = false
@@ -140,7 +193,7 @@ class OAChatViewController: UIViewController {
         inputTextView.textContainer.lineFragmentPadding = 0
         inputTextView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textInputContainerView.addSubview(inputTextView)
-        
+
         // Send Button
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         let config = UIImage.SymbolConfiguration(scale: .large)
@@ -148,39 +201,39 @@ class OAChatViewController: UIViewController {
         sendButton.setImage(sendButtonImage, for: .normal)
         sendButton.tintColor = .label
         sendButton.addTarget(self, action: #selector(didTapSendButton), for: .touchUpInside)
-        
+
 #if !targetEnvironment(macCatalyst)
         sendButton.configuration = .glass()
 #endif
         textInputContainerView.addSubview(sendButton)
-        
+
         // TableView
         tableView.translatesAutoresizingMaskIntoConstraints = false
         tableView.register(OAChatMessageCell.self, forCellReuseIdentifier: Constants.cellId)
         tableView.separatorStyle = .none
         tableView.keyboardDismissMode = .interactive
         view.addSubview(tableView)
-        
+
         inputContainerBottomConstraint = inputContainerView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
         inputContainerBottomConstraint?.isActive = true
-        
+
         // Layout Constraints
         NSLayoutConstraint.activate([
             // Input Container View
             inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            
+
             // Attachment Collection View
             attachmentCollectionView.topAnchor.constraint(equalTo: inputContainerView.topAnchor),
             attachmentCollectionView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
             attachmentCollectionView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
-            
+
             // Text Input Container
             textInputContainerView.topAnchor.constraint(equalTo: attachmentCollectionView.bottomAnchor),
             textInputContainerView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
             textInputContainerView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor, constant: -8),
             textInputContainerView.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
-            
+
             // Attach Button
             attachButton.leadingAnchor.constraint(equalTo: textInputContainerView.leadingAnchor, constant: 8),
             attachButton.bottomAnchor.constraint(lessThanOrEqualTo: textInputContainerView.bottomAnchor, constant: -8),
@@ -194,7 +247,7 @@ class OAChatViewController: UIViewController {
             inputTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
             inputTextView.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor),
             inputTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
-            
+
             // Send Button
             sendButton.trailingAnchor.constraint(equalTo: textInputContainerView.trailingAnchor, constant: -8),
             sendButton.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor, constant: -8),
@@ -209,13 +262,133 @@ class OAChatViewController: UIViewController {
             tableView.bottomAnchor.constraint(equalTo: inputContainerView.topAnchor)
         ])
     }
-    
+
+    @MainActor
+    private func updateUI(for state: ChatViewState) {
+        switch state {
+        case .empty:
+            updateSnapshot(for: .empty)
+            inputTextView.isEditable = false
+            sendButton.isEnabled = false
+            attachButton.isEnabled = false
+            inputTextView.text = ""
+
+        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
+            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
+            sendButton.isEnabled = !isStreaming && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
+            inputTextView.isEditable = !isStreaming
+            attachButton.isEnabled = !isStreaming
+
+            // Only update text field if transitioning to/from streaming state or if it contains streaming placeholder
+            if isStreaming {
+                inputTextView.text = "Receiving message..."
+                inputTextView.textColor = .systemGray2
+            } else if inputTextView.text == "Receiving message..." {
+                // Reset text field when streaming ends
+                inputTextView.text = ""
+                inputTextView.textColor = .label
+                // Update send button state after resetting text field
+                sendButton.isEnabled = !inputTextView.text.isEmpty || !pendingAttachments.isEmpty
+            }
+
+        case .loading:
+            updateSnapshot(for: .empty)
+            inputTextView.isEditable = false
+            sendButton.isEnabled = false
+            attachButton.isEnabled = false
+            inputTextView.text = ""
+
+        case .error(let message):
+            updateSnapshot(for: .error(message))
+            inputTextView.isEditable = true
+            inputTextView.text = ""
+            inputTextView.textColor = .label
+            sendButton.isEnabled = !inputTextView.text.isEmpty || !pendingAttachments.isEmpty
+            attachButton.isEnabled = true
+        }
+    }
+
+    @objc private func didTapSendButton() {
+        let text = inputTextView.text ?? ""
+        guard !text.isEmpty || !pendingAttachments.isEmpty else {
+            return
+        }
+
+        // Create the new message object with attachments
+        let newMessage = OAChatMessage(
+            id: UUID().uuidString,
+            role: .user,
+            content: text,
+            date: Date.now,
+            attachments: pendingAttachments
+        )
+
+        // Clear the input
+        self.inputTextView.text = ""
+        self.pendingAttachments.removeAll()
+        self.updateAttachmentDisplay()
+        self.chatManager.sendMessage(newMessage)
+    }
+
+    @objc private func didTapWebSearchButton() {
+        chatManager.toggleWebSearch()
+        updateNavigationButtonStates()
+    }
+
+    private func updateNavigationButtonStates() {
+        // Update web search button appearance using direct reference
+        let imageName = chatManager.webSearchEnabled ? "globe.fill" : "globe"
+        webSearchButton.image = UIImage(systemName: imageName)
+        webSearchButton.tintColor = chatManager.webSearchEnabled ? .systemBlue : .label
+        
+        // Disable model selection when no chat is loaded
+        let hasCurrentChat = chatManager.viewState.currentChatId != nil
+        modelButton.isEnabled = hasCurrentChat
+    }
+
+    @MainActor
+    private func createPersistentMenu() -> UIMenu {
+        let actions = Model.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
+            return UIAction(
+                title: model.displayName,
+                state: (model == self.currentlySelectedModel) ? .on : .off
+            ) { [weak self] action in
+                guard let self else { return }
+                Task {
+                    await self.chatManager.updateModel(model)
+                }
+            }
+        }
+        return UIMenu(
+            title: "Choose Model",
+            image: UIImage(systemName: "brain.head.profile"),
+            children: actions
+        )
+    }
+
+    private func showErrorAlert(_ errorMessage: String) {
+        let alert = UIAlertController(
+            title: "Error",
+            message: errorMessage,
+            preferredStyle: .alert
+        )
+
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+
+        present(alert, animated: true)
+    }
+}
+
+// MARK: Table View
+
+extension OAChatViewController {
+
     private func setupDataSource() {
         self.dataSource = UITableViewDiffableDataSource<Int, String>(
             tableView: self.tableView
         ) { [weak self] (tableView: UITableView, indexPath: IndexPath, messageID: String) -> UITableViewCell in
             guard let self = self else { return UITableViewCell() }
-            
+
             // Handle placeholder cases
             if messageID == Constants.emptyPlaceholder {
                 let cell = UITableViewCell()
@@ -225,7 +398,7 @@ class OAChatViewController: UIViewController {
                 cell.selectionStyle = .none
                 return cell
             }
-            
+
             if messageID == Constants.errorPlaceholder {
                 let cell = UITableViewCell()
                 cell.textLabel?.text = Constants.errorPlaceholderText
@@ -234,12 +407,12 @@ class OAChatViewController: UIViewController {
                 cell.selectionStyle = .none
                 return cell
             }
-            
+
             // Handle normal message case
             guard let cell = tableView.dequeueReusableCell(withIdentifier: Constants.cellId, for: indexPath) as? OAChatMessageCell else {
                 return UITableViewCell()
             }
-            
+
             if case .chat(_, let messages, _, _) = self.chatManager.viewState,
                let message = messages.first(where: { $0.id == messageID }) {
                 cell.configure(with: message)
@@ -250,66 +423,7 @@ class OAChatViewController: UIViewController {
         }
         self.tableView.dataSource = self.dataSource
     }
-    
-    private func startObservation() {
-        observationTask?.cancel()
-        observationTask = Task { @MainActor in
-            // Use the clean AsyncStream from ChatDataManager
-            for await event in chatManager.uiEventStream {
-                guard !Task.isCancelled else { break }
-                
-                switch event {
-                case .viewStateChanged(let newState):
-                    updateUI(for: newState)
-                case .modelChanged:
-                    updateModelSelection()
-                }
-            }
-        }
-    }
-    
-    
-    @MainActor
-    private func updateUI(for state: ChatViewState) {
-        switch state {
-        case .empty:
-            updateSnapshot(for: .empty)
-            inputTextView.isEditable = false
-            sendButton.isEnabled = false
-            attachButton.isEnabled = false
-            inputTextView.text = ""
-            
-        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
-            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
-            sendButton.isEnabled = !isStreaming && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
-            inputTextView.isEditable = !isStreaming
-            attachButton.isEnabled = !isStreaming
-            inputTextView.text = isStreaming ? "Receiving message..." : ""
-            inputTextView.textColor = isStreaming ? .systemGray2 : .label
 
-        case .loading:
-            updateSnapshot(for: .empty)
-            inputTextView.isEditable = false
-            sendButton.isEnabled = false
-            attachButton.isEnabled = false
-            inputTextView.text = ""
-            
-        case .error(let message):
-            updateSnapshot(for: .error(message))
-            inputTextView.isEditable = true
-            sendButton.isEnabled = !inputTextView.text.isEmpty || !pendingAttachments.isEmpty
-            attachButton.isEnabled = true
-        }
-    }
-    
-    
-    private func updateModelSelection() {
-        currentlySelectedModel = chatManager.selectedModel
-        guard OAPlatform.isMacCatalyst,
-              let button = navigationItem.rightBarButtonItem else { return }
-        button.menu = makeModelSelectionMenu()
-    }
-    
     private func updateSnapshot(for state: ChatViewState, animatingDifferences: Bool = true) {
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0])
@@ -353,120 +467,15 @@ class OAChatViewController: UIViewController {
         
         Task { @MainActor in
             let lastIndexPath = IndexPath(item: messages.count - 1, section: 0)
-            if self.tableView.numberOfSections > 0 && 
+            if self.tableView.numberOfSections > 0 &&
                 self.tableView.numberOfRows(inSection: 0) > lastIndexPath.row {
                 self.tableView.scrollToRow(at: lastIndexPath, at: .bottom, animated: true)
             }
         }
     }
-    
-    func loadChat(with id: String) async {
-        await self.chatManager.saveProvisionalTextInput(self.inputTextView.text)
-        if let chat = await self.chatManager.loadChat(with: id) {
-            print("Debug: Successfully loaded chat: \(chat.title)")
-            self.inputTextView.text = chat.provisionaryInputText ?? ""
-        } else {
-            print("Debug: Failed to load chat with ID: \(id)")
-        }
-        
-        // Clear attachments when switching chats
-        pendingAttachments.removeAll()
-        updateAttachmentDisplay()
-    }
-    
-    @objc private func didTapSendButton() {
-        let text = inputTextView.text ?? ""
-        guard !text.isEmpty || !pendingAttachments.isEmpty else {
-            return
-        }
-        
-        // Create the new message object with attachments
-        let newMessage = OAChatMessage(
-            id: UUID().uuidString,
-            role: .user,
-            content: text,
-            date: Date.now,
-            attachments: pendingAttachments
-        )
-        
-        // Clear the input
-        self.inputTextView.text = ""
-        self.pendingAttachments.removeAll()
-        self.updateAttachmentDisplay()
-        self.chatManager.sendMessage(newMessage)
-    }
-    
-    @objc private func didTapAttachButton() {
-        presentDocumentPicker()
-    }
-    
-    private func presentDocumentPicker() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
-            .image,
-            .pdf,
-            .text,
-            .plainText,
-            .data
-        ])
-        picker.delegate = self
-        picker.allowsMultipleSelection = false
-        present(picker, animated: true)
-    }
-    
-    private func updateAttachmentDisplay() {
-        attachmentCollectionView.updateAttachments(pendingAttachments)
-        
-        // Update send button state
-        let hasContent = !(inputTextView.text?.isEmpty ?? true) || !pendingAttachments.isEmpty
-        if case .chat(_, _, _, let isStreaming) = chatManager.viewState {
-            sendButton.isEnabled = !isStreaming && hasContent
-        }
-    }
-    
-    @objc private func didTapModelButton() {
-        if !OAPlatform.isMacCatalyst {
-            self.presentModelSelectionActionSheet()
-        }
-//        else {
-//            self.makeModelSelectionMenu()
-//        }
-    }
-    
-    @objc private func presentModelSelectionActionSheet() {
-        let alert = UIAlertController(title: "Choose Model", message: nil, preferredStyle: .actionSheet)
-        for model in Model.allCases.sorted(by: { $0.displayName < $1.displayName }) {
-            let isSelected = (self.chatManager.selectedModel == model)
-            let action = UIAlertAction(
-                title: model.displayName + (isSelected ? " ✓" : ""),
-                style: .default
-            ) { [weak self] _ in
-                Task {
-                    await self?.chatManager.updateModel(model)
-                }
-            }
-            alert.addAction(action)
-        }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        if let popover = alert.popoverPresentationController, let button = navigationItem.rightBarButtonItem {
-            popover.barButtonItem = button
-        }
-        present(alert, animated: true)
-    }
-    
-    private func makeModelSelectionMenu() -> UIMenu {
-        return UIMenu(title: "Choose Model", children: Model.allCases.sorted(by: { $0.displayName < $1.displayName }).map { model in
-            let isSelected = (self.currentlySelectedModel == model)
-            return UIAction(
-                title: model.displayName,
-                state: isSelected ? .on : .off
-            ) { [weak self] _ in
-                Task {
-                    await self?.chatManager.updateModel(model)
-                }
-            }
-        })
-    }
 }
+
+// MARK: ATTACHMENTS
 
 extension OAChatViewController: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
@@ -485,13 +494,13 @@ extension OAChatViewController: OAAttachmentCollectionViewDelegate {
 extension OAChatViewController: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-        
+
         Task {
             do {
                 let data = try Data(contentsOf: url)
                 let filename = url.lastPathComponent
                 let mimeType = url.mimeType
-                
+
                 let attachment = OAAttachment(
                     id: UUID().uuidString,
                     filename: filename,
@@ -499,7 +508,7 @@ extension OAChatViewController: UIDocumentPickerDelegate {
                     data: data,
                     thumbnailData: OAAttachment(id: "", filename: filename, mimeType: mimeType, data: data).generateThumbnail()
                 )
-                
+
                 await MainActor.run {
                     self.pendingAttachments.append(attachment)
                     self.updateAttachmentDisplay()
@@ -509,19 +518,48 @@ extension OAChatViewController: UIDocumentPickerDelegate {
             }
         }
     }
+
+    @objc private func didTapAttachButton() {
+        presentDocumentPicker()
+    }
+
+    private func presentDocumentPicker() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [
+            .image,
+            .pdf,
+            .text,
+            .plainText,
+            .data
+        ])
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    private func updateAttachmentDisplay() {
+        attachmentCollectionView.updateAttachments(pendingAttachments)
+
+        // Update send button state
+        let hasContent = !(inputTextView.text?.isEmpty ?? true) || !pendingAttachments.isEmpty
+        if case .chat(_, _, _, let isStreaming) = chatManager.viewState {
+            sendButton.isEnabled = !isStreaming && hasContent
+        }
+    }
 }
+
+// MARK: KEYBOARD
 
 extension OAChatViewController {
     private func setupKeyboardObservers() {
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillShow), name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardWillHide), name: UIResponder.keyboardWillHideNotification, object: nil)
     }
-    
+
     private func removeKeyboardObservers() {
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
         NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
     }
-    
+
     @objc private func keyboardWillShow(notification: NSNotification) {
         guard let userInfo = notification.userInfo,
               let keyboardFrameValue = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue,
@@ -529,31 +567,31 @@ extension OAChatViewController {
               let curve = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.uintValue else {
             return
         }
-        
+
         let keyboardFrameInScreen = keyboardFrameValue.cgRectValue
         let keyboardFrameInView = self.view.convert(keyboardFrameInScreen, from: nil)
         let intersection = self.view.bounds.intersection(keyboardFrameInView)
         let keyboardHeight = intersection.height
-        
+
         inputContainerBottomConstraint?.constant = -keyboardHeight + view.safeAreaInsets.bottom
-        
+
         UIView.animate(withDuration: duration, delay: 0, options: UIView.AnimationOptions(rawValue: curve), animations: {
             self.view.layoutIfNeeded()
         })
     }
-    
+
     @objc private func keyboardWillHide(notification: NSNotification) {
         guard let userInfo = notification.userInfo,
               let duration = (userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue,
               let curve = (userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.uintValue else {
             return
         }
-        
+
         inputContainerBottomConstraint?.constant = 0
-        
+
         UIView.animate(withDuration: duration, delay: 0, options: UIView.AnimationOptions(rawValue: curve), animations: {
             self.view.layoutIfNeeded()
         })
     }
-    
 }
+
