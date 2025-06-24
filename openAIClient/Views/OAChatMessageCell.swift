@@ -190,11 +190,19 @@ class OAChatMessageCell: UITableViewCell {
                 range: NSRange(location: 0, length: mutableString.length)
             )
             
+            // Set Dynamic Type font
+            mutableString.addAttribute(
+                .font,
+                value: UIFont.preferredFont(forTextStyle: .body),
+                range: NSRange(location: 0, length: mutableString.length)
+            )
+            
             textView.attributedText = mutableString
         } else {
             // Fallback to plain text
             textView.text = text
             textView.textColor = role == .user ? .white : .label
+            textView.font = UIFont.preferredFont(forTextStyle: .body)
         }
         
         return textView
@@ -270,13 +278,13 @@ class OAChatMessageCell: UITableViewCell {
         
         let nameLabel = UILabel()
         nameLabel.text = attachment.filename
-        nameLabel.font = .systemFont(ofSize: 14, weight: .medium)
+        nameLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
         nameLabel.numberOfLines = 2
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         
         let sizeLabel = UILabel()
         sizeLabel.text = attachment.sizeString
-        sizeLabel.font = .systemFont(ofSize: 12)
+        sizeLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         sizeLabel.textColor = .secondaryLabel
         sizeLabel.translatesAutoresizingMaskIntoConstraints = false
         

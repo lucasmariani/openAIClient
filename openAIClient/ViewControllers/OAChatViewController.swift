@@ -43,6 +43,9 @@ class OAChatViewController: UIViewController {
     private var pendingAttachments: [OAAttachment] = []
 
     private var inputContainerBottomConstraint: NSLayoutConstraint?
+    private var textViewHeightConstraint: NSLayoutConstraint?
+    private var attachButtonCenterYConstraint: NSLayoutConstraint?
+    private var sendButtonCenterYConstraint: NSLayoutConstraint?
 
     private var dataSource: UITableViewDiffableDataSource<Int, String>!
 
@@ -191,7 +194,8 @@ class OAChatViewController: UIViewController {
         inputTextView.font = .systemFont(ofSize: 16)
         inputTextView.backgroundColor = .clear
         inputTextView.textContainer.lineFragmentPadding = 0
-        inputTextView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        inputTextView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+        inputTextView.showsVerticalScrollIndicator = false
         textInputContainerView.addSubview(inputTextView)
 
         // Send Button
@@ -236,24 +240,19 @@ class OAChatViewController: UIViewController {
 
             // Attach Button
             attachButton.leadingAnchor.constraint(equalTo: textInputContainerView.leadingAnchor, constant: 8),
-            attachButton.bottomAnchor.constraint(lessThanOrEqualTo: textInputContainerView.bottomAnchor, constant: -8),
             attachButton.widthAnchor.constraint(equalToConstant: 32),
             attachButton.heightAnchor.constraint(equalToConstant: 32),
-            attachButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor),
 
             // Input TextView
             inputTextView.leadingAnchor.constraint(equalTo: attachButton.trailingAnchor, constant: 8),
             inputTextView.topAnchor.constraint(equalTo: textInputContainerView.topAnchor),
             inputTextView.trailingAnchor.constraint(equalTo: sendButton.leadingAnchor, constant: -8),
             inputTextView.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor),
-            inputTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40),
 
             // Send Button
             sendButton.trailingAnchor.constraint(equalTo: textInputContainerView.trailingAnchor, constant: -8),
-            sendButton.bottomAnchor.constraint(equalTo: textInputContainerView.bottomAnchor, constant: -8),
             sendButton.widthAnchor.constraint(equalToConstant: 32),
             sendButton.heightAnchor.constraint(equalToConstant: 32),
-            sendButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor),
 
             // TableView
             tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
@@ -261,7 +260,56 @@ class OAChatViewController: UIViewController {
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: inputContainerView.topAnchor)
         ])
+        
+        // Setup dynamic constraints for text view height and button alignment
+        setupDynamicTextViewConstraints()
     }
+    
+    private func setupDynamicTextViewConstraints() {
+        // Set up dynamic height constraint for text view with minimum and maximum
+        textViewHeightConstraint = inputTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 40)
+        textViewHeightConstraint?.priority = UILayoutPriority(999)
+        textViewHeightConstraint?.isActive = true
+        
+        // Add maximum height constraint to prevent excessive growth
+        let maxHeightConstraint = inputTextView.heightAnchor.constraint(lessThanOrEqualToConstant: 120)
+        maxHeightConstraint.priority = UILayoutPriority(1000)
+        maxHeightConstraint.isActive = true
+        
+        // Setup initial button alignment
+        updateButtonAlignment()
+    }
+    
+    private func updateButtonAlignment() {
+        // Remove existing center Y constraints if they exist
+        attachButtonCenterYConstraint?.isActive = false
+        sendButtonCenterYConstraint?.isActive = false
+        
+        // Calculate the optimal Y position for buttons based on text content
+//        let buttonYPosition = calculateButtonYPosition()
+        
+        // Set up new constraints based on calculated position
+        attachButtonCenterYConstraint = attachButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor)
+        sendButtonCenterYConstraint = sendButton.centerYAnchor.constraint(equalTo: textInputContainerView.centerYAnchor)
+
+        attachButtonCenterYConstraint?.isActive = true
+        sendButtonCenterYConstraint?.isActive = true
+    }
+    
+//    private func calculateButtonYPosition() -> CGFloat {
+//        let textView = inputTextView
+//        let font = textView.font ?? UIFont.systemFont(ofSize: 16)
+//        let lineHeight = font.lineHeight
+//        let textContainerInsetTop = textView.textContainerInset.top
+//        
+//        // For single line or when starting fresh, center the button to the first line
+//        let buttonHeight: CGFloat = 32
+//        let idealCenterY = textContainerInsetTop + (lineHeight / 2)
+//        let buttonTopPosition = idealCenterY - (buttonHeight / 2)
+//        
+//        // Ensure minimum spacing from container top
+//        return max(buttonTopPosition, 8)
+//    }
 
     @MainActor
     private func updateUI(for state: ChatViewState) {
@@ -480,6 +528,12 @@ extension OAChatViewController {
 extension OAChatViewController: UITextViewDelegate {
     func textViewDidChange(_ textView: UITextView) {
         updateAttachmentDisplay()
+        updateButtonAlignment()
+        
+        // Force layout update if needed
+        UIView.animate(withDuration: 0.1, delay: 0, options: .curveEaseInOut) {
+            self.view.layoutIfNeeded()
+        }
     }
 }
 
