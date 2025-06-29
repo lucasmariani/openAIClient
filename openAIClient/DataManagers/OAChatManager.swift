@@ -44,7 +44,7 @@ final class OAChatManager {
 
     // UI State - All UI components bind to these properties
     var chats: [OAChat] = []           // For sidebar
-    var messages: [OAChatMessage] = [] // For chat view
+    private var messages: [OAChatMessage] = [] // For chat view
     var selectedModel: Model = .gpt41nano // Default model, will be overridden when loading chats
     var viewState: ChatViewState = .loading
 
@@ -157,19 +157,19 @@ final class OAChatManager {
     }
 
     @discardableResult
-    func loadChat(with id: String) async -> OAChat? {
+    func loadChat(with chatId: String) async -> OAChat? {
         do {
             // Clear streaming state when switching chats
             streamingCoordinator.clearMessages()
 
             let allChats = await coreDataManager.getCurrentChats()
-            guard let chat = allChats.first(where: { $0.id == id }) else {
+            guard let chat = allChats.first(where: { $0.id == chatId }) else {
                 clearCurrentChat()
                 return nil
             }
 
-            currentChatId = id
-            messages = try await coreDataManager.fetchMessages(for: id)
+            currentChatId = chatId
+            messages = try await coreDataManager.fetchMessages(for: chatId)
             let oldModel = selectedModel
 
             // Use the chat's selected model
@@ -192,7 +192,7 @@ final class OAChatManager {
             return chat
 
         } catch {
-            print("Failed to load chat \(id): \(error)")
+            print("Failed to load chat \(chatId): \(error)")
             clearCurrentChat()
             return nil
         }
@@ -264,8 +264,18 @@ final class OAChatManager {
 
     // MARK: - Chat Management Methods
 
-    func createNewChat() async throws {
-        try await coreDataManager.newChat()
+    func createNewChat() async throws -> String {
+        return try await coreDataManager.newChat()
+    }
+    
+    /// Creates a new chat and automatically selects it for immediate use
+    func createAndSelectNewChat() async throws -> String {
+        let newChatId = try await coreDataManager.newChat()
+        
+        // Automatically select the newly created chat
+        await loadChat(with: newChatId)
+        
+        return newChatId
     }
 
     func deleteChat(with id: String) async throws {

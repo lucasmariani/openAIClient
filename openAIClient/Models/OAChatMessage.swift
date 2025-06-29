@@ -34,15 +34,14 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
               let roleString = message.role, // Assuming 'role' is String in Core Data
               let role = OARole(rawValue: roleString),
               let content = message.content,
-              let date = message.date,
-              let imageData = message.imageData else {
+              let date = message.date else {
             return nil
         }
         self.id = id
         self.role = role
         self.content = content
         self.date = date
-        self.imageData = imageData
+        self.imageData = message.imageData
 
         // Convert Core Data attachments to OAAttachment array
         let attachmentSet = message.attachments as? Set<Attachment> ?? Set<Attachment>()

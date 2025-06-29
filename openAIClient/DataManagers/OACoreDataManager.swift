@@ -97,14 +97,15 @@ final class OACoreDataManager {
         }
     }
 
-    func newChat() async throws {
+    func newChat() async throws -> String {
         let chatDate = Date.now
         let formattedTimestamp = Self.formatChatTimestamp(chatDate)
+        let newChatId = UUID().uuidString
 
         // Use new CoreDataActor operation pattern
         try await CoreDataActor.performOperation { context in
             let chat = Chat(context: context)
-            chat.id = UUID().uuidString
+            chat.id = newChatId
             chat.date = chatDate
             chat.title = "New Chat \(formattedTimestamp)"
             chat.selectedModel = Model.gpt41nano.value // Set default model for new chats
@@ -113,6 +114,8 @@ final class OACoreDataManager {
 
         // Refresh chats after creation
         try await fetchPersistedChats()
+        
+        return newChatId
     }
 
     nonisolated private static func formatChatTimestamp(_ date: Date) -> String {

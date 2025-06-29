@@ -12,7 +12,7 @@ class OASidebarViewController: UIViewController {
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
     private let chatManager: OAChatManager
-//    private var observationTask: Task<Void, Never>?
+    private var pendingSelectionChatId: String?
 
     // Selection mode properties
     private var addButton: UIBarButtonItem!
@@ -189,22 +189,22 @@ class OASidebarViewController: UIViewController {
         super.viewWillLayoutSubviews()
         updateEditButtonState()
         Task { @MainActor in
-            self.updateSnapshot(with: self.chatManager.chats)
-//            if self.chatDataManager.chats.count == 1 {
-//                self.selectLatestChat()
-//            }
+            await self.updateSnapshot(with: self.chatManager.chats)
+            if let pendingChatId = self.pendingSelectionChatId {
+                self.selectNewChatInCollectionView(chatId: pendingChatId)
+                self.pendingSelectionChatId = nil
+            }
         }
     }
 
-
-    private func updateSnapshot(with chats: [OAChat]) {
+    private func updateSnapshot(with chats: [OAChat]) async {
         var snapshot = NSDiffableDataSourceSnapshot<Section, Item>()
         snapshot.appendSections([.chats])
 
         // Add existing chats
         let chatItems = chats.map { Item.chat($0) }
         snapshot.appendItems(chatItems, toSection: .chats)
-        dataSource.apply(snapshot, animatingDifferences: true)
+        await dataSource.apply(snapshot, animatingDifferences: true)
     }
 
     private func selectLatestChat() {
@@ -218,12 +218,50 @@ class OASidebarViewController: UIViewController {
 
     @objc private func addNewChat() async {
         do {
-            try await chatManager.createNewChat()
+            // Create new chat and automatically select it
+            let newChatId = try await chatManager.createAndSelectNewChat()
+
+            await MainActor.run {
+                // Schedule the selection to happen after the collection view updates
+                self.pendingSelectionChatId = newChatId
+
+                // Handle split view controller navigation for different platforms
+                self.handleSplitViewNavigationForNewChat()
+            }
         } catch {
             await MainActor.run {
                 showErrorAlert(message: "Failed to create new chat: \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Selects the newly created chat in the collection view
+    private func selectNewChatInCollectionView(chatId: String) {
+        // Find the index of the new chat (it should be the first item since chats are sorted by date)
+        let chats = chatManager.chats
+        if let chatIndex = chats.firstIndex(where: { $0.id == chatId }) {
+            let indexPath = IndexPath(item: chatIndex, section: 0)
+
+            // Safety check: ensure collection view has been updated with the expected number of items
+            let collectionViewItemCount = collectionView.numberOfItems(inSection: 0)
+
+            guard indexPath.item < collectionViewItemCount else {
+                print("⚠️ Cannot select item at index \(indexPath.item) - collection view only has \(collectionViewItemCount) items")
+                return
+            }
+
+            print("✅ Selecting item at indexPath: \(indexPath), collection view has \(collectionViewItemCount) items")
+            collectionView.selectItem(at: indexPath, animated: true, scrollPosition: .top)
+        }
+    }
+
+    /// Handles split view controller navigation after creating a new chat
+    private func handleSplitViewNavigationForNewChat() {
+        // If split view is collapsed (iPhone), show the detail view
+        if splitViewController?.isCollapsed == true {
+            splitViewController?.show(.secondary)
+        }
+        // On iPad/Mac Catalyst, both views are already visible, so no additional navigation needed
     }
 
     private func showErrorAlert(message: String) {
