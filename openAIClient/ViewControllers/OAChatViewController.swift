@@ -97,9 +97,13 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+    }
+
+    private func updateModelButtonEnableState() {
         // Disable model selection when no chat is loaded
         let hasCurrentChat = chatManager.viewState.currentChatId != nil
         modelButton.isEnabled = hasCurrentChat
+
     }
 
     private func updateWebSearchButtonAppearance() {
@@ -121,6 +125,7 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
             for await event in chatManager.uiEventStream {
                 guard !Task.isCancelled else { break }
 
+                updateModelButtonEnableState()
                 switch event {
                 case .viewStateChanged(let newState):
                     updateUI(for: newState)
@@ -155,6 +160,7 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
         // Clear attachments when switching chats
         pendingAttachments.removeAll()
         updateAttachmentDisplay()
+
     }
 
     // MARK: UI
@@ -175,10 +181,10 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
 
         // Configure model button completely before adding to UI
         self.modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"),
-                                      menu: createPersistentMenu())
-
+                                           menu: createPersistentMenu())
+        
         self.webSearchButton = createWebSearchButton()
-
+        
         // Add fully configured buttons to navigation bar
         navigationItem.rightBarButtonItems = [self.modelButton]
         if let webSearchButton {
@@ -187,6 +193,7 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
 
         // Update button appearances with current state
         updateWebSearchButtonVisibility()
+        updateModelButtonEnableState()
     }
 
     private func setupSubviews() {
