@@ -279,8 +279,8 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
             inputStackView.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
 
             // Text Input Container Margins (within stack view)
-            textInputContainerView.leadingAnchor.constraint(equalTo: inputStackView.leadingAnchor, constant: 8),
-            textInputContainerView.trailingAnchor.constraint(equalTo: inputStackView.trailingAnchor, constant: -8),
+            textInputContainerView.leadingAnchor.constraint(equalTo: inputStackView.leadingAnchor),
+            textInputContainerView.trailingAnchor.constraint(equalTo: inputStackView.trailingAnchor),
 
             // Attach Button
             attachButton.leadingAnchor.constraint(equalTo: textInputContainerView.leadingAnchor, constant: 8),
