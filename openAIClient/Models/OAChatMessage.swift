@@ -31,7 +31,7 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
 
     init?(message: Message) { // 'Message' is the Core Data entity
         guard let id = message.id,
-              let roleString = message.role, // Assuming 'role' is String in Core Data
+              let roleString = message.role,
               let role = OARole(rawValue: roleString),
               let content = message.content,
               let date = message.date else {
@@ -46,9 +46,6 @@ struct OAChatMessage: Codable, Sendable, Hashable { // Ensure it's Hashable if u
         // Convert Core Data attachments to OAAttachment array
         let attachmentSet = message.attachments as? Set<Attachment> ?? Set<Attachment>()
         self.attachments = attachmentSet.compactMap { OAAttachment(attachment: $0) }
-        
-        // Initialize generatedImages as empty for existing messages
-        // TODO: Add Core Data support for storing generated images
     }
 
     mutating func update(with content: String, date: Date) {

@@ -224,7 +224,7 @@ final class OAChatManager {
                 streamingTask?.cancel()
                 streamingTask = Task { @MainActor in
                     //                    do {
-                    let streamEvents = streamingCoordinator.streamMessage(
+                    let streamEvents = streamingCoordinator.sendStreamingMessage(
                         text: chatMessage.content,
                         model: selectedModel,
                         attachments: chatMessage.attachments.map { $0.fileAttachment(from: $0) },
@@ -460,6 +460,8 @@ final class OAChatManager {
         }
     }
 
+    // MARK: - Errors
+
     private func handleStreamingError(_ error: Error, chatId: String) {
         if chatId == currentChatId {
             let errorString = "Streaming error in chat \(chatId): \(error)"
@@ -534,10 +536,30 @@ extension OAChatManager {
               let assistantMessage = messages.last?.content else { return }
 
         do {
-            let generatedTitle = try await streamingCoordinator.generateTitle(
-                userMessage: userMessage,
-                assistantMessage: assistantMessage
+            let titlePrompt = """
+                         Based on this conversation, generate a concise, descriptive title (max 6 words):
+                         
+                         User: \(userMessage)
+                         Assistant: \(assistantMessage)
+                         
+                         Title:
+                         """
+            let instructions = "Generate a short, descriptive title for this conversation. Respond with only the title, no additional text."
+
+            let responseMessage = try await streamingCoordinator.sendNonStreamingMessage(
+                messageText: titlePrompt,
+                model: .gpt41nano,
+                attachments: [],
+                previousResponseId: nil,
+                instructions: instructions,
+                maxOutputTokens: 20,
+                temperature: 0.3,
+                webSearchEnabled: false,
+                webSearchRequired: false,
+                userLocation: nil,
+                imageGenerationEnabled: false
             )
+            let generatedTitle = responseMessage.content
             try await coreDataManager.updateChatTitle(chatId, title: generatedTitle)
         } catch {
             print("Failed to generate chat title: \(error)")
