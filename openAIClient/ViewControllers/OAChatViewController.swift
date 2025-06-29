@@ -103,7 +103,6 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
         // Disable model selection when no chat is loaded
         let hasCurrentChat = chatManager.viewState.currentChatId != nil
         modelButton.isEnabled = hasCurrentChat
-
     }
 
     private func updateWebSearchButtonAppearance() {

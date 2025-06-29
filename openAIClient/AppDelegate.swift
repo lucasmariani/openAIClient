@@ -36,6 +36,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         print("⚠️ App will terminate - performing emergency Core Data save")
 
+        // Request additional background time to complete Core Data save
+        var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+        backgroundTaskID = application.beginBackgroundTask {
+            application.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+
         // Force synchronous save to ensure data persistence
         let context = OACoreDataStack.shared.mainContext
         if context.hasChanges {
@@ -45,6 +52,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             } catch {
                 print("❌ Emergency Core Data save failed: \(error)")
             }
+        }
+
+        // End background task
+        if backgroundTaskID != .invalid {
+            application.endBackgroundTask(backgroundTaskID)
         }
     }
 }
