@@ -18,8 +18,9 @@ protocol OACoreDataManagerDelegate: AnyObject, Sendable {
 
 // MARK: - Core Data Manager with Swift 6 Strict Concurrency
 
-@CoreDataActor
-final class OACoreDataManager {
+actor OACoreDataManager {
+
+    private let coreDataStack: OACoreDataStack
 
     // Thread-safe storage for chats - only accessed from CoreDataActor
     private var chats: [OAChat] = []
@@ -39,7 +40,11 @@ final class OACoreDataManager {
         _delegate = delegate
     }
 
-    init() {
+    init(coreDataStack: OACoreDataStack) {
+        self.coreDataStack = coreDataStack
+    }
+
+    func initialMethod() {
         Task {
             try? await self.fetchPersistedChats()
         }
@@ -55,11 +60,12 @@ final class OACoreDataManager {
                 await self.handleRemoteChanges()
             }
         }
+
     }
 
     func fetchPersistedChats() async throws {
         // Use the modern async Core Data stack methods
-        let fetchedChats = try await OACoreDataStack.shared.performBackgroundTask { context in
+        let fetchedChats = try await coreDataStack.performBackgroundTask { context in
             let req: NSFetchRequest<Chat> = Chat.fetchRequest()
             req.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
             let chats = try context.fetch(req)
@@ -103,7 +109,7 @@ final class OACoreDataManager {
         let newChatId = UUID().uuidString
 
         // Use new CoreDataActor operation pattern
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let chat = Chat(context: context)
             chat.id = newChatId
             chat.date = chatDate
@@ -125,7 +131,7 @@ final class OACoreDataManager {
     }
 
     func deleteChat(with id: String) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
             fetchRequest.fetchLimit = 1
@@ -145,7 +151,7 @@ final class OACoreDataManager {
         guard !ids.isEmpty else { return }
 
         // Use modern batch delete for better performance
-        let deletedObjectIDs = try await OACoreDataStack.shared.performBatchDelete(
+        let deletedObjectIDs = try await coreDataStack.performBatchDelete(
             entity: Chat.self,
             predicateFormat: "id IN %@",
             arguments: [ids]
@@ -158,7 +164,7 @@ final class OACoreDataManager {
     }
 
     func fetchMessages(for chatID: String) async throws -> [OAChatMessage] {
-        return try await OACoreDataStack.shared.performBackgroundTask { context in
+        return try await coreDataStack.performBackgroundTask { context in
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             chatFetchRequest.fetchLimit = 1
@@ -187,7 +193,7 @@ final class OACoreDataManager {
     }
 
     func updateMessage(with chatMessage: OAChatMessage, chatId: String, isStreaming: Bool? = nil) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             chatFetchRequest.fetchLimit = 1
@@ -220,7 +226,7 @@ final class OACoreDataManager {
     }
 
     func saveMessage(_ message: OAChatMessage, toChatID chatID: String, isStreaming: Bool = false) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             // Fetch the Chat Managed Object
             let chatFetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             chatFetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
@@ -264,7 +270,7 @@ final class OACoreDataManager {
     }
 
     func updateProvisionalInputText(for chatID: String, text: String?) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatID as CVarArg)
             fetchRequest.fetchLimit = 1
@@ -280,7 +286,7 @@ final class OACoreDataManager {
 
     func updateSelectedModelFor(_ chatId: String?, model: Model) async throws {
         guard let chatId else { return }
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             fetchRequest.fetchLimit = 1
@@ -295,7 +301,7 @@ final class OACoreDataManager {
     }
 
     func updateChatTitle(_ chatId: String, title: String) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             fetchRequest.fetchLimit = 1
@@ -311,7 +317,7 @@ final class OACoreDataManager {
     }
 
     func updatePreviousResponseId(_ chatId: String, previousResponseId: String?) async throws {
-        try await OACoreDataStack.shared.performBackgroundTask { context in
+        try await coreDataStack.performBackgroundTask { context in
             let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
             fetchRequest.predicate = NSPredicate(format: "id == %@", chatId as CVarArg)
             fetchRequest.fetchLimit = 1

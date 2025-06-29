@@ -61,7 +61,39 @@ final class OACoreDataStack {
             await initializeStore()
         }
     }
-    
+
+//    private func setupNotifications() {
+//        // Note: With your current architecture using OACoreDataManager + @Observable,
+//        // you don't actually need automatic mainContext merging since your UI doesn't
+//        // directly observe Core Data objects. The actor pattern with explicit 
+//        // fetchPersistedChats() calls handles state updates properly.
+//        
+//        // This observer is kept minimal - mainly for potential future CloudKit sync
+//        // or if you ever add direct Core Data UI bindings
+//        
+//        NotificationCenter.default.addObserver(
+//            forName: .NSManagedObjectContextDidSave,
+//            object: nil,
+//            queue: .main
+//        ) { [weak self] notification in
+//            guard let self = self else { return }
+//            
+//            // Extract Sendable identifier before crossing the actor boundary
+//            guard let context = notification.object as? NSManagedObjectContext else { return }
+//            let contextObjectID = ObjectIdentifier(context) // ObjectIdentifier is Sendable
+//            
+//            // Use Task with MainActor to safely access mainContext
+//            Task { @MainActor in
+//                // Only handle saves from background contexts, not our main context
+//                let mainContextID = ObjectIdentifier(self.mainContext)
+//                guard contextObjectID != mainContextID else { return }
+//                
+//                // For now, just refresh - could be extended for CloudKit changes
+//                self.mainContext.refreshAllObjects()
+//            }
+//        }
+//    }
+
     /// Asynchronously initialize the Core Data stack
     private func initializeStore() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -159,45 +191,24 @@ final class OACoreDataStack {
         _ operation: @escaping @Sendable (NSManagedObjectContext) throws -> T
     ) async throws -> T {
         await waitForInitialization()
-        
-        let context = newBackgroundContext()
-        return try await context.perform {
-            do {
-                let result = try operation(context)
-                if context.hasChanges {
-                    try context.save()
-                }
-                return result
-            } catch {
-                context.rollback()
-                throw error
-            }
-        }
-    }
-    
-    /// Perform a batch operation with TaskGroup for concurrent processing
-    func performBatchOperation<T: Sendable>(
-        batchSize: Int = 100,
-        items: [T],
-        operation: @escaping @Sendable (NSManagedObjectContext, [T]) throws -> Void
-    ) async throws {
-        await waitForInitialization()
-        
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            let batches = items.chunked(into: batchSize)
-            
-            for batch in batches {
-                group.addTask {
-                    try await self.performBackgroundTask { context in
-                        try operation(context, batch)
+
+        return try await Task.detached(priority: .utility) {
+            let context = self.newBackgroundContext()
+            return try await context.perform {
+                do {
+                    let result = try operation(context)
+                    if context.hasChanges {
+                        try context.save()
                     }
+                    return result
+                } catch {
+                    context.rollback()
+                    throw error
                 }
             }
-            
-            try await group.waitForAll()
-        }
+        }.value
     }
-    
+
     /// Perform a batch delete operation using NSBatchDeleteRequest
     func performBatchDelete<T: NSManagedObject>(
         entity: T.Type,
@@ -216,12 +227,10 @@ final class OACoreDataStack {
             let result = try context.execute(deleteRequest) as! NSBatchDeleteResult
             let objectIDs = result.result as! [NSManagedObjectID]
             
-            // Merge changes to update other contexts
-            let changes = [NSDeletedObjectsKey: objectIDs]
-            await MainActor.run {
-                NSManagedObjectContext.mergeChanges(fromRemoteContextSave: changes, into: [context, self.mainContext])
-            }
-            
+            // Note: No automatic merging needed since OACoreDataManager 
+            // calls fetchPersistedChats() after batch operations, which properly
+            // updates the actor state and notifies the UI through @Observable
+
             return objectIDs
         }
     }

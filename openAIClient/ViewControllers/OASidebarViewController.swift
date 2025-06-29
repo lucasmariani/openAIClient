@@ -281,6 +281,7 @@ class OASidebarViewController: UIViewController {
     }
 
     func restoreButtonsConfiguration() {
+        navigationController?.setToolbarHidden(false, animated: false)
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
             self.navigationItem.rightBarButtonItems = [self.addButton]
             if !self.chatManager.chats.isEmpty {
@@ -288,15 +289,14 @@ class OASidebarViewController: UIViewController {
             } else {
                 self.toolbarItems = []
             }
-            self.navigationController?.setToolbarHidden(false, animated: true)
         })
     }
 
     func setButtonsToEditMode() {
+        navigationController?.setToolbarHidden(false, animated: false)
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
             self.navigationItem.rightBarButtonItems = []
             self.toolbarItems = [self.flexibleSpace, self.selectAllButton, self.deleteButton, self.cancelButton]
-            self.navigationController?.setToolbarHidden(false, animated: true)
         })
     }
 

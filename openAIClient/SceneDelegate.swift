@@ -33,7 +33,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             // Wait for Core Data to be ready before proceeding
             await OACoreDataStack.shared.waitForInitialization()
             
-            let coreDataManager = await OACoreDataManager()
+            let coreDataManager = OACoreDataManager(coreDataStack: OACoreDataStack.shared)
 
             // Create streamingCoordinator and chatManager
             guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
