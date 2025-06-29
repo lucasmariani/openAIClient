@@ -30,6 +30,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         // Initialize CoreData manager asynchronously
         Task {
+            // Wait for Core Data to be ready before proceeding
+            await OACoreDataStack.shared.waitForInitialization()
+            
             let coreDataManager = await OACoreDataManager()
 
             // Create streamingCoordinator and chatManager
@@ -84,8 +87,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Called when the scene will move from an active state to an inactive state.
         // This may occur due to temporary interruptions (ex. an incoming phone call).
 
-        // Force save Core Data context to ensure no data loss
-        OACoreDataStack.shared.saveContext()
+        // Save Core Data context safely - won't block if Core Data isn't ready
+        Task { @MainActor in
+            OACoreDataStack.shared.saveContext()
+        }
     }
 
     func sceneWillEnterForeground(_ scene: UIScene) {
@@ -105,8 +110,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // Use this method to save data, release shared resources, and store enough scene-specific state information
         // to restore the scene back to its current state.
 
-        // Force save Core Data context
-        OACoreDataStack.shared.saveContext()
+        // Save Core Data context safely - use async version for better reliability
+        Task { @MainActor in
+            await OACoreDataStack.shared.saveContextAsync()
+        }
     }
 }
 
