@@ -10,7 +10,7 @@ import Observation
 import UniformTypeIdentifiers
 import OpenAIForSwift
 
-class OAChatViewController: UIViewController {
+class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
 
     private enum ChatStateIdentifier: String {
         case emptyPlaceholder
@@ -29,12 +29,13 @@ class OAChatViewController: UIViewController {
     }
 
     private let tableView = UITableView()
-    private let inputTextView = UITextView()
+    private let inputTextView = CustomChatInputTextView()
     private let sendButton = UIButton(type: .system)
     private let attachButton = UIButton(type: .system)
     private let attachmentCollectionView = OAAttachmentCollectionView()
     private let inputContainerView = UIView()
     private let textInputContainerView = UIView()
+    private let inputStackView = UIStackView()
 
     // Strong references to navigation bar buttons for reliable state management
     private var modelButton: UIBarButtonItem!
@@ -73,6 +74,7 @@ class OAChatViewController: UIViewController {
         super.viewDidLoad()
         self.view.backgroundColor = .systemBackground
         self.inputTextView.delegate = self
+        self.inputTextView.chatInputDelegate = self
         self.tableView.allowsSelection = false
         self.attachmentCollectionView.delegate = self
         self.setupSubviews()
@@ -192,10 +194,17 @@ class OAChatViewController: UIViewController {
         inputContainerView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputContainerView)
 
+        // Input Stack View
+        inputStackView.translatesAutoresizingMaskIntoConstraints = false
+        inputStackView.axis = .vertical
+        inputStackView.spacing = 0
+        inputStackView.alignment = .fill
+        inputStackView.distribution = .fill
+        inputContainerView.addSubview(inputStackView)
+
         // Attachment Collection View
         attachmentCollectionView.translatesAutoresizingMaskIntoConstraints = false
         attachmentCollectionView.isHidden = true
-        inputContainerView.addSubview(attachmentCollectionView)
 
         // Text Input Container
         textInputContainerView.translatesAutoresizingMaskIntoConstraints = false
@@ -203,7 +212,10 @@ class OAChatViewController: UIViewController {
         textInputContainerView.layer.borderWidth = 1
         textInputContainerView.layer.borderColor = UIColor.systemGray4.cgColor
         textInputContainerView.backgroundColor = .systemGray6
-        inputContainerView.addSubview(textInputContainerView)
+
+        // Add both views to stack view
+        inputStackView.addArrangedSubview(attachmentCollectionView)
+        inputStackView.addArrangedSubview(textInputContainerView)
 
         // Attach Button
         attachButton.translatesAutoresizingMaskIntoConstraints = false
@@ -253,16 +265,15 @@ class OAChatViewController: UIViewController {
             inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
 
-            // Attachment Collection View
-            attachmentCollectionView.topAnchor.constraint(equalTo: inputContainerView.topAnchor),
-            attachmentCollectionView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
-            attachmentCollectionView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
+            // Input Stack View
+            inputStackView.topAnchor.constraint(equalTo: inputContainerView.topAnchor),
+            inputStackView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor),
+            inputStackView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor),
+            inputStackView.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
 
-            // Text Input Container
-            textInputContainerView.topAnchor.constraint(equalTo: attachmentCollectionView.bottomAnchor),
-            textInputContainerView.leadingAnchor.constraint(equalTo: inputContainerView.leadingAnchor, constant: 8),
-            textInputContainerView.trailingAnchor.constraint(equalTo: inputContainerView.trailingAnchor, constant: -8),
-            textInputContainerView.bottomAnchor.constraint(equalTo: inputContainerView.bottomAnchor, constant: -8),
+            // Text Input Container Margins (within stack view)
+            textInputContainerView.leadingAnchor.constraint(equalTo: inputStackView.leadingAnchor, constant: 8),
+            textInputContainerView.trailingAnchor.constraint(equalTo: inputStackView.trailingAnchor, constant: -8),
 
             // Attach Button
             attachButton.leadingAnchor.constraint(equalTo: textInputContainerView.leadingAnchor, constant: 8),
@@ -556,6 +567,12 @@ extension OAChatViewController: UITextViewDelegate {
             self.view.layoutIfNeeded()
         }
     }
+    
+    // MARK: - CustomChatInputTextViewDelegate
+    
+    func customChatInputTextViewDidRequestSend(_ textView: CustomChatInputTextView) {
+        didTapSendButton()
+    }
 }
 
 @MainActor
@@ -669,4 +686,3 @@ extension OAChatViewController {
         })
     }
 }
-
