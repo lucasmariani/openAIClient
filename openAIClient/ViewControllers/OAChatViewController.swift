@@ -38,7 +38,7 @@ class OAChatViewController: UIViewController {
 
     // Strong references to navigation bar buttons for reliable state management
     private var modelButton: UIBarButtonItem!
-    private var webSearchButton: UIBarButtonItem!
+    private var webSearchButton: UIBarButtonItem?
 
     private var pendingAttachments: [OAAttachment] = []
 
@@ -86,12 +86,30 @@ class OAChatViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         setupKeyboardObservers()
-
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         removeKeyboardObservers()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Disable model selection when no chat is loaded
+        let hasCurrentChat = chatManager.viewState.currentChatId != nil
+        modelButton.isEnabled = hasCurrentChat
+    }
+
+    private func updateWebSearchButtonAppearance() {
+        self.webSearchButton?.isSelected = self.chatManager.webSearchRequested
+
+        if let webSearchButton {
+            if webSearchButton.isSelected {
+                webSearchButton.image = UIImage(systemName: "globe.fill")
+            } else {
+                webSearchButton.image = UIImage(systemName: "globe")
+            }
+        }
     }
 
     private func startObservation() {
@@ -104,21 +122,17 @@ class OAChatViewController: UIViewController {
                 switch event {
                 case .viewStateChanged(let newState):
                     updateUI(for: newState)
-                    updateNavigationButtonStates()
                 case .modelChanged(let model):
                     print("📱 Event received: modelChanged(\(model.displayName))")
                     Task { @MainActor in
                         self.currentlySelectedModel = model
                         
                         // Automatically disable web search if new model doesn't support it
-                        if !model.capabilities.supportsWebSearch && chatManager.webSearchEnabled {
-                            chatManager.setWebSearchEnabled(false)
-                        }
+
                         
                         self.modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"), menu: createPersistentMenu())
-                        navigationItem.rightBarButtonItems?.removeFirst()
-                        navigationItem.rightBarButtonItems?.insert(self.modelButton, at: 0)
-                        updateNavigationButtonStates()
+                        navigationItem.rightBarButtonItems = [self.modelButton]
+                        updateWebSearchButtonVisibility()
                     }
                 case .showErrorAlert(let errorMessage):
                     showErrorAlert(errorMessage)
@@ -143,28 +157,34 @@ class OAChatViewController: UIViewController {
 
     // MARK: UI
 
+    private func createWebSearchButton() -> UIBarButtonItem {
+        UIBarButtonItem(
+            image: UIImage(systemName: "globe"),
+            style: .plain,
+            target: self,
+            action: #selector(didTapWebSearchButton)
+        )
+    }
+
     @MainActor
     private func setupNavBar() {
         self.title = nil
         self.navigationItem.largeTitleDisplayMode = .never
 
         // Configure model button completely before adding to UI
-        modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"),
+        self.modelButton = UIBarButtonItem(image: UIImage(systemName: "brain.head.profile"),
                                       menu: createPersistentMenu())
 
-        // Configure web search button completely before adding to UI
-        webSearchButton = UIBarButtonItem(
-            image: UIImage(systemName: "globe"),
-            style: .plain,
-            target: self,
-            action: #selector(didTapWebSearchButton)
-        )
+        self.webSearchButton = createWebSearchButton()
 
         // Add fully configured buttons to navigation bar
-        navigationItem.rightBarButtonItems = [modelButton, webSearchButton]
+        navigationItem.rightBarButtonItems = [self.modelButton]
+        if let webSearchButton {
+            navigationItem.rightBarButtonItems?.append(webSearchButton)
+        }
 
         // Update button appearances with current state
-        updateNavigationButtonStates()
+        updateWebSearchButtonVisibility()
     }
 
     private func setupSubviews() {
@@ -356,7 +376,8 @@ class OAChatViewController: UIViewController {
             role: .user,
             content: text,
             date: Date.now,
-            attachments: pendingAttachments
+            attachments: pendingAttachments,
+            imageData: nil
         )
 
         // Clear the input
@@ -370,28 +391,28 @@ class OAChatViewController: UIViewController {
         // Only allow toggle if current model supports web search
         guard currentlySelectedModel?.capabilities.supportsWebSearch == true else { return }
         
-        chatManager.toggleWebSearch()
-        updateNavigationButtonStates()
+        chatManager.toggleWebSearchRequested()
+        self.updateWebSearchButtonAppearance()
     }
 
-    private func updateNavigationButtonStates() {
+    private func updateWebSearchButtonVisibility() {
         // Check if current model supports web search
         let supportsWebSearch = currentlySelectedModel?.capabilities.supportsWebSearch ?? false
-        
-        // Update web search button appearance and state
-        let imageName = chatManager.webSearchEnabled ? "globe.fill" : "globe"
-        webSearchButton.image = UIImage(systemName: imageName)
-        
+
         if supportsWebSearch {
-            webSearchButton.tintColor = chatManager.webSearchEnabled ? .systemBlue : .label
+            self.webSearchButton = self.createWebSearchButton()
+            if let webSearchButton {
+                self.navigationItem.rightBarButtonItems?.append(webSearchButton)
+                self.webSearchButton?.tintColor = chatManager.webSearchRequested ? .systemBlue : .label
+                self.webSearchButton?.isEnabled = supportsWebSearch
+            }
         } else {
-            webSearchButton.tintColor = .systemGray3
+            chatManager.setWebSearchRequested(false)
+            if let navButtons = self.navigationItem.rightBarButtonItems, navButtons.count > 1 {
+                self.navigationItem.rightBarButtonItems?.remove(at: 1)
+                self.webSearchButton = nil
+            }
         }
-        webSearchButton.isEnabled = supportsWebSearch
-        
-        // Disable model selection when no chat is loaded
-        let hasCurrentChat = chatManager.viewState.currentChatId != nil
-        modelButton.isEnabled = hasCurrentChat
     }
 
     @MainActor

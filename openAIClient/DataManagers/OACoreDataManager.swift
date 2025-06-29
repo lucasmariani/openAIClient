@@ -202,6 +202,7 @@ final class OACoreDataManager {
             // Update the message properties
             messageToUpdate.content = chatMessage.content
             messageToUpdate.date = chatMessage.date
+            messageToUpdate.imageData = chatMessage.imageData
 
             // Update streaming state if provided
             if let isStreaming = isStreaming {
@@ -233,6 +234,7 @@ final class OACoreDataManager {
             messageMO.content = message.content
             messageMO.date = message.date
             messageMO.chatId = chatID
+            messageMO.imageData = message.imageData
             messageMO.isStreaming = isStreaming // i don't think i need to store this in CoreData.
 
             // Save attachments if they exist

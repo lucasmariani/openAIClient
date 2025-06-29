@@ -79,12 +79,18 @@ class OAChatMessageCell: UITableViewCell {
             messageViews.forEach { bubbleStackView.addArrangedSubview($0) }
         }
         
+        // Add generated images if any
+        if let imageData = message.imageData {
+            let generatedImagesView = createGeneratedImagesView(from: [imageData])
+            bubbleStackView.addArrangedSubview(generatedImagesView)
+        }
+        
         // Configure bubble alignment and width constraints
         configureBubbleAlignment(for: message.role)
     }
     
     func configure(with message: String, role: OARole) {
-        let chatMessage = OAChatMessage(id: UUID().uuidString, role: role, content: message)
+        let chatMessage = OAChatMessage(id: UUID().uuidString, role: role, content: message, imageData: nil)
         configure(with: chatMessage)
     }
     
@@ -306,6 +312,56 @@ class OAChatMessageCell: UITableViewCell {
             sizeLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
             sizeLabel.trailingAnchor.constraint(equalTo: nameLabel.trailingAnchor),
             sizeLabel.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -8)
+        ])
+        
+        return containerView
+    }
+    
+    private func createGeneratedImagesView(from imageDataArray: [Data]) -> UIView {
+        let containerView = UIView()
+        let stackView = UIStackView()
+        stackView.axis = .vertical
+        stackView.spacing = 12
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        
+        for imageData in imageDataArray {
+            if let image = UIImage(data: imageData) {
+                let imageView = createGeneratedImageView(with: image)
+                stackView.addArrangedSubview(imageView)
+            }
+        }
+        
+        containerView.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor)
+        ])
+        
+        return containerView
+    }
+    
+    private func createGeneratedImageView(with image: UIImage) -> UIView {
+        let containerView = UIView()
+        containerView.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.1)
+        containerView.layer.cornerRadius = 12
+        containerView.clipsToBounds = true
+        
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.clipsToBounds = true
+        imageView.layer.cornerRadius = 8
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        
+        containerView.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 8),
+            imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -8),
+            imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 8),
+            imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -8),
+            imageView.heightAnchor.constraint(lessThanOrEqualToConstant: 300),
+            imageView.widthAnchor.constraint(lessThanOrEqualToConstant: 300)
         ])
         
         return containerView

@@ -49,9 +49,9 @@ final class OAChatManager {
     var viewState: ChatViewState = .loading
 
     // Web search configuration
-    var webSearchEnabled: Bool = false
+    var webSearchRequested: Bool = false
     var userLocation: UserLocation? = nil
-
+    
     private var streamingTask: Task<Void, Never>?
 
     // UI Event Stream - for complex state changes
@@ -144,16 +144,16 @@ final class OAChatManager {
         }
     }
 
-    func toggleWebSearch() {
-        webSearchEnabled.toggle()
-    }
-
     func setUserLocation(_ location: UserLocation?) {
         userLocation = location
     }
 
-    func setWebSearchEnabled(_ enabled: Bool) {
-        webSearchEnabled = enabled
+    func toggleWebSearchRequested() {
+        webSearchRequested.toggle()
+    }
+
+    func setWebSearchRequested(_ requested: Bool) {
+        webSearchRequested = requested
     }
 
     @discardableResult
@@ -229,7 +229,6 @@ final class OAChatManager {
                         model: selectedModel,
                         attachments: chatMessage.attachments.map { $0.fileAttachment(from: $0) },
                         previousResponseId: previousResponseId,
-                        webSearchEnabled: webSearchEnabled,
                         userLocation: userLocation
                     )
 
@@ -239,10 +238,6 @@ final class OAChatManager {
                     }
 
                     print("🏁 ChatManager: Streaming task completed successfully")
-                    //                    } catch {
-                    //                        print("❌ ChatManager: Failed to start streaming: \(error)")
-                    //                        handleStreamingError(error, chatId: currentChatId)
-                    //                    }
                 }
 
             } catch {
@@ -304,7 +299,8 @@ final class OAChatManager {
                 id: message.responseId,
                 role: OARole.assistant,
                 content: message.content,
-                date: message.timestamp
+                date: message.timestamp,
+                imageData: message.imageData
             )
 
             // Save initial message to Core Data
@@ -330,7 +326,8 @@ final class OAChatManager {
                 id: message.responseId,
                 role: OARole.assistant,
                 content: message.content,
-                date: message.timestamp
+                date: message.timestamp,
+                imageData: message.imageData
             )
 
             do {
@@ -351,11 +348,15 @@ final class OAChatManager {
         case .messageCompleted(let message):
             print("🟢 ChatManager: Completing message with ID: \(message.responseId) for chat: \(chatId)")
 
+            // Find existing message to preserve any generated images
+            let existingMessage = messages.first(where: { $0.id == message.responseId })
+
             let responseMessage = OAChatMessage(
                 id: message.responseId,
                 role: OARole.assistant,
                 content: message.content,
-                date: message.timestamp
+                date: message.timestamp,
+                imageData: message.imageData
             )
 
             do {
@@ -392,7 +393,38 @@ final class OAChatManager {
 
         case .streamError(let error):
             handleStreamingError(error, chatId: chatId)
-            //TODO: handle these new events.
+            
+        case .imageGenerationInProgress(let itemId):
+            print("🎨 ChatManager: Image generation in progress for item: \(itemId)")
+            
+        case .imageGenerationGenerating(let itemId, let progress, let totalSteps):
+            print("🎨 ChatManager: Image generation progress: \(progress)/\(totalSteps) for item: \(itemId)")
+            
+        case .imageGenerationPartialImage(let itemId, let imageData):
+            print("🎨 ChatManager: Partial image received for item: \(itemId), size: \(imageData.count) bytes")
+            
+        case .imageGenerationCompleted(let itemId, let results):
+            print("🎨 ChatManager: Image generation completed for item: \(itemId), \(results.count) images generated")
+            
+            // Extract image data from results
+            if let newImageData = results.compactMap({ $0.imageData }).first {
+
+                // Find the current assistant message being streamed
+                if let lastMessageIndex = messages.lastIndex(where: { $0.role == OARole.assistant }) {
+                    // Create updated message with generated images
+                    var updatedMessage = messages[lastMessageIndex]
+                    updatedMessage.updateGeneratedImage(newImageData)
+                    messages[lastMessageIndex] = updatedMessage
+                    
+                    // Trigger UI update
+                    if chatId == currentChatId {
+                        let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: updatedMessage.id, isStreaming: false)
+                        viewState = newViewState
+                        uiEventContinuation.yield(.viewStateChanged(newViewState))
+                        print("🎨 ChatManager: Updated UI with generated image")
+                    }
+                }
+            }
         case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
             break
         case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
@@ -403,6 +435,17 @@ final class OAChatManager {
             break
         case .reasoningDone(reasoning: let reasoning):
             break
+        }
+    }
+
+    private func updateMessageInLocalArray(_ message: OAChatMessage) {
+        if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            let oldContent = messages[index].content
+            messages[index] = message
+            print("🔄 ChatManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
+        } else {
+            print("⚠️ ChatManager: Could not find message with ID \(message.id) in local array of \(messages.count) messages")
+            print("⚠️ ChatManager: Available message IDs: \(messages.map { $0.id })")
         }
     }
 
@@ -427,24 +470,6 @@ final class OAChatManager {
         }
     }
 
-    private func updateMessageInLocalArray(_ message: OAChatMessage) {
-        if let index = messages.firstIndex(where: { $0.id == message.id }) {
-            let oldContent = messages[index].content
-            messages[index] = message
-            print("🔄 ChatManager: Updated message at index \(index), content changed: \(oldContent.count) → \(message.content.count) chars")
-        } else {
-            print("⚠️ ChatManager: Could not find message with ID \(message.id) in local array of \(messages.count) messages")
-            print("⚠️ ChatManager: Available message IDs: \(messages.map { $0.id })")
-        }
-    }
-
-    private func shouldGenerateTitle() -> Bool {
-        // Generate title only if we have exactly 2 messages (1 user + 1 assistant)
-        return messages.count == 2 &&
-        messages.first?.role == OARole.user &&
-        messages.last?.role == OARole.assistant
-    }
-
     private func extractUserFriendlyErrorMessage(from error: Error) -> String {
         // Handle streaming errors
         if let streamingError = error as? StreamingError {
@@ -464,6 +489,7 @@ final class OAChatManager {
             }
         }
 
+        // TODO: redo this whole error extraction.
         // Handle OpenAI API errors by checking the error description
         let errorDescription = error.localizedDescription
 
@@ -487,7 +513,11 @@ final class OAChatManager {
         // Fallback to a user-friendly generic message
         return "An error occurred while processing your request. Please try again."
     }
+}
 
+// MARK: - Chat Title
+
+extension OAChatManager {
     private func generateChatTitle(for chatId: String) async {
         guard let userMessage = messages.first?.content,
               let assistantMessage = messages.last?.content else { return }
@@ -501,6 +531,13 @@ final class OAChatManager {
         } catch {
             print("Failed to generate chat title: \(error)")
         }
+    }
+
+    private func shouldGenerateTitle() -> Bool {
+        // Generate title only if we have exactly 2 messages (1 user + 1 assistant)
+        return messages.count == 2 &&
+        messages.first?.role == OARole.user &&
+        messages.last?.role == OARole.assistant
     }
 }
 
