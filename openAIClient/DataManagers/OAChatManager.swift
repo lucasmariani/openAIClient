@@ -229,7 +229,8 @@ final class OAChatManager {
                         model: selectedModel,
                         attachments: chatMessage.attachments.map { $0.fileAttachment(from: $0) },
                         previousResponseId: previousResponseId,
-                        userLocation: userLocation
+                        userLocation: userLocation,
+                        webSearchRequested: self.webSearchRequested
                     )
 
                     for await event in streamEvents {
