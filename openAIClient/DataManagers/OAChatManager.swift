@@ -460,7 +460,7 @@ final class OAChatManager {
 
     // MARK: - Errors
 
-    private func handleStreamingError(_ error: Error, chatId: String) {
+    private func handleStreamingError(_ error: StreamError, chatId: String) {
         if chatId == currentChatId {
             let errorString = "Streaming error in chat \(chatId): \(error)"
             print(errorString)
@@ -481,48 +481,32 @@ final class OAChatManager {
         }
     }
 
-    private func extractUserFriendlyErrorMessage(from error: Error) -> String {
+    private func extractUserFriendlyErrorMessage(from error: StreamError) -> String {
         // Handle streaming errors
-        if let streamingError = error as? StreamingError {
-            switch streamingError {
-            case .serviceFailed(let underlying):
-                return extractUserFriendlyErrorMessage(from: underlying)
-            case .networkError(let description):
-                return "Network error: \(description)"
-            case .rateLimited:
-                return "Rate limit exceeded. Please try again later."
-            case .invalidContent:
-                return "Invalid content in response."
-            case .streamCancelled:
-                return "Request was cancelled."
-            case .maxRetriesExceeded(lastError: let lastError):
-                return "Max retried exceeded. Error: \(lastError.localizedDescription)"
-            }
+        switch error {
+        case .serviceFailed(underlying: let error):
+            return "Service failed error: \(error.localizedDescription)"
+        case .networkError(description: let description, underlying: let error):
+            return "Network error: \(description)"
+        case .rateLimited:
+            return "Rate limit exceeded. Please try again later."
+        case .invalidContent(reason: let reason, underlying: let error):
+            return "Invalid content in response: \(reason)"
+        case .streamCancelled:
+            return "Request was cancelled."
+        case .maxRetriesExceeded(lastError: let error):
+            return "Max retried exceeded. Error: \(error.lastError.localizedDescription). Attempt count: \(error.attempts)"
+        case .encodingError(description: let description):
+            return "Encoding error: \(description)"
+        case .authenticationRequired(statusCode: let statusCode, description: let description, retryAfter: let retryAfter):
+            return "Authentication required: \(description)"
+        case .authorizationFailed(statusCode: let statusCode, description: let description):
+            return "Authentication failed: \(description)"
+        case .clientError(statusCode: let statusCode, description: let description, isRetryable: let isRetryable):
+            return "Client error: \(description)"
+        case .serverError(statusCode: let statusCode, description: let description, retryAfter: let retryAfter):
+            return "Server error: \(description)"
         }
-
-        // TODO: redo this whole error extraction.
-        // Handle OpenAI API errors by checking the error description
-        let errorDescription = error.localizedDescription
-
-        // Look for OpenAI error response format in the description
-        if errorDescription.contains("not supported with") {
-            // Extract the specific error from OpenAI API format
-            if let range = errorDescription.range(of: "message\":\"([^\"]*)\"", options: .regularExpression) {
-                let messageContent = String(errorDescription[errorDescription.index(range.lowerBound, offsetBy: 10)..<errorDescription.index(range.upperBound, offsetBy: -1)])
-                return messageContent
-            }
-        }
-
-        // Parse JSON error responses
-        if let data = errorDescription.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let errorDict = json["error"] as? [String: Any],
-           let message = errorDict["message"] as? String {
-            return message
-        }
-
-        // Fallback to a user-friendly generic message
-        return "An error occurred while processing your request. Please try again."
     }
 }
 
