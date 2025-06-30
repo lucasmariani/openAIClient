@@ -340,4 +340,30 @@ actor OACoreDataManager {
             print("❌ Failed to refresh chats after remote changes: \(error)")
         }
     }
+    
+    // MARK: - Cleanup Methods
+    
+    func cleanUpEmptyChats() async throws {
+        let emptyChatsToDelete = try await coreDataStack.performBackgroundTask { context in
+            let fetchRequest: NSFetchRequest<Chat> = Chat.fetchRequest()
+            fetchRequest.predicate = NSPredicate(format: "messages.@count == 0")
+            fetchRequest.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
+            
+            let emptyChats = try context.fetch(fetchRequest)
+            
+            // If there are more than 1 empty chats, keep only the most recent one
+            guard emptyChats.count > 1 else {
+                return [] as [String] // Return empty array if 1 or 0 empty chats
+            }
+            
+            // Skip the first (most recent) and get IDs of the rest to delete
+            let chatsToDelete = Array(emptyChats.dropFirst())
+            return chatsToDelete.compactMap { $0.id }
+        }
+        
+        if !emptyChatsToDelete.isEmpty {
+            print("🧹 Cleaning up \(emptyChatsToDelete.count) empty chats, keeping the most recent one")
+            try await deleteChats(with: emptyChatsToDelete)
+        }
+    }
 }

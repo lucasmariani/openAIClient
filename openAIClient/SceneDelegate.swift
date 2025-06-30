@@ -34,6 +34,16 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             await OACoreDataStack.shared.waitForInitialization()
             
             let coreDataManager = OACoreDataManager(coreDataStack: OACoreDataStack.shared)
+            
+            // Initialize the core data manager and perform cleanup
+            await coreDataManager.initialMethod()
+            
+            // Clean up empty chats at launch - keep only the most recent empty chat
+            do {
+                try await coreDataManager.cleanUpEmptyChats()
+            } catch {
+                print("⚠️ Failed to clean up empty chats at launch: \(error)")
+            }
 
             // Create streamingCoordinator and chatManager
             guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "API_KEY") as? String else {
