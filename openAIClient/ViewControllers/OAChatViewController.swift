@@ -77,12 +77,13 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
         self.inputTextView.chatInputDelegate = self
         self.tableView.allowsSelection = false
         self.attachmentCollectionView.delegate = self
+
         self.setupSubviews()
         self.setupDataSource()
         self.setupNavBar()
         self.chatManager.loadLatestChat()
 
-        startObservation()
+        self.startObservation()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -268,8 +269,8 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
         // Layout Constraints
         NSLayoutConstraint.activate([
             // Input Container View
-            inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-            inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            inputContainerView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8),
+            inputContainerView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -8),
 
             // Input Stack View
             inputStackView.topAnchor.constraint(equalTo: inputContainerView.topAnchor),
