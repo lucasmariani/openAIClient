@@ -51,7 +51,7 @@ final class OAChatManager {
     // Web search configuration
     var webSearchRequested: Bool = false
     var userLocation: UserLocation? = nil
-    
+
     private var streamingTask: Task<Void, Never>?
 
     // UI Event Stream - for complex state changes
@@ -267,14 +267,14 @@ final class OAChatManager {
     func createNewChat() async throws -> String {
         return try await coreDataManager.newChat()
     }
-    
+
     /// Creates a new chat and automatically selects it for immediate use
     func createAndSelectNewChat() async throws -> String {
         let newChatId = try await coreDataManager.newChat()
-        
+
         // Automatically select the newly created chat
         await loadChat(with: newChatId)
-        
+
         return newChatId
     }
 
@@ -359,9 +359,6 @@ final class OAChatManager {
         case .messageCompleted(let message):
             print("🟢 ChatManager: Completing message with ID: \(message.responseId) for chat: \(chatId)")
 
-            // Find existing message to preserve any generated images
-            let existingMessage = messages.first(where: { $0.id == message.responseId })
-
             let responseMessage = OAChatMessage(
                 id: message.responseId,
                 role: OARole.assistant,
@@ -404,19 +401,19 @@ final class OAChatManager {
 
         case .streamError(let error):
             handleStreamingError(error, chatId: chatId)
-            
+
         case .imageGenerationInProgress(let itemId):
             print("🎨 ChatManager: Image generation in progress for item: \(itemId)")
-            
+
         case .imageGenerationGenerating(let itemId, let progress, let totalSteps):
             print("🎨 ChatManager: Image generation progress: \(progress)/\(totalSteps) for item: \(itemId)")
-            
+
         case .imageGenerationPartialImage(let itemId, let imageData):
             print("🎨 ChatManager: Partial image received for item: \(itemId), size: \(imageData.count) bytes")
-            
+
         case .imageGenerationCompleted(let itemId, let results):
             print("🎨 ChatManager: Image generation completed for item: \(itemId), \(results.count) images generated")
-            
+
             // Extract image data from results
             if let newImageData = results.compactMap({ $0.imageData }).first {
 
@@ -426,7 +423,7 @@ final class OAChatManager {
                     var updatedMessage = messages[lastMessageIndex]
                     updatedMessage.updateGeneratedImage(newImageData)
                     messages[lastMessageIndex] = updatedMessage
-                    
+
                     // Trigger UI update
                     if chatId == currentChatId {
                         let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: updatedMessage.id, isStreaming: false)
@@ -436,16 +433,17 @@ final class OAChatManager {
                     }
                 }
             }
-        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
-            break
-        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
-            break
-        case .functionCallArgumentsDone(callId: let callId, arguments: let arguments):
-            break
-        case .reasoningDelta(delta: let delta):
-            break
-        case .reasoningDone(reasoning: let reasoning):
-            break
+            //        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
+            //            break
+            //        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
+            //            break
+            //        case .functionCallArgumentsDone(callId: let callId, arguments: let arguments):
+            //            break
+            //        case .reasoningDelta(delta: let delta):
+            //            break
+            //        case .reasoningDone(reasoning: let reasoning):
+            //            break
+        default: break
         }
     }
 
