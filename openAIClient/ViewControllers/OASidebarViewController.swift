@@ -19,7 +19,7 @@ class OASidebarViewController: UIViewController {
     // Selection mode properties
     private var addButton: UIBarButtonItem!
     private var selectButton: UIBarButtonItem!
-    private var cancelButton: UIBarButtonItem!
+    private var doneButton: UIBarButtonItem!
     private var deleteButton: UIBarButtonItem!
     private var selectAllButton: UIBarButtonItem!
     private var flexibleSpace: UIBarButtonItem!
@@ -99,23 +99,22 @@ class OASidebarViewController: UIViewController {
                 }
             }
         )
-        
-        let symbolConf: UIImage.SymbolConfiguration = UIImage.SymbolConfiguration.preferringMulticolor()
-        let checkmarkImage = UIImage(systemName: "checkmark.circle")?.withConfiguration(symbolConf)
+
         selectButton = UIBarButtonItem(
-            image: checkmarkImage,
+            systemItem: .edit,
             primaryAction: UIAction { [weak self] _ in
                 self?.setEditing(true, animated: true)
             }
         )
         
-        cancelButton = UIBarButtonItem(
-            systemItem: .cancel,
+        doneButton = UIBarButtonItem(
+            systemItem: .done,
             primaryAction: UIAction { [weak self] _ in
                 self?.setEditing(false, animated: true)
             }
         )
-        
+        doneButton.style = .prominent
+
         // Create toolbar items
         deleteButton = UIBarButtonItem(
             systemItem: .trash,
@@ -236,7 +235,7 @@ class OASidebarViewController: UIViewController {
         navigationController?.setToolbarHidden(false, animated: false)
         UIView.animate(withDuration: 0.3, delay: 0, options: [.curveEaseInOut], animations: {
             self.navigationItem.rightBarButtonItems = []
-            self.toolbarItems = [self.flexibleSpace, self.selectAllButton, self.deleteButton, self.cancelButton]
+            self.toolbarItems = [self.selectAllButton, self.flexibleSpace, self.deleteButton, self.doneButton]
         })
     }
     
