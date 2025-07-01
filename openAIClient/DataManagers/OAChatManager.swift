@@ -425,14 +425,25 @@ final class OAChatManager {
             if chatId == currentChatId {
                 // Check if message exists in array - if not, add it (edge case handling)
                 let messageExists = messages.contains { $0.id == responseMessage.id }
+                let shouldReconfigureMessage: String?
+                
                 if !messageExists {
                     messages.append(responseMessage)
+                    shouldReconfigureMessage = responseMessage.id
                     print("📊 ChatManager: messageCompleted - message didn't exist in array, added it")
                 } else {
+                    // Check if content actually changed from last streaming update
+                    let existingMessage = messages.first { $0.id == responseMessage.id }
+                    let contentChanged = existingMessage?.content != responseMessage.content
+                    
                     updateMessageInLocalArray(responseMessage)
+                    
+                    // Only trigger reconfiguration if content actually changed
+                    shouldReconfigureMessage = contentChanged ? responseMessage.id : nil
+                    print("📊 ChatManager: messageCompleted - content changed: \(contentChanged), will reconfigure: \(shouldReconfigureMessage != nil)")
                 }
                 
-                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, waitingState: .none)
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: shouldReconfigureMessage, waitingState: .none)
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
                 print("📊 ChatManager: messageCompleted. Updated viewState to none waiting state with \(messages.count) messages")

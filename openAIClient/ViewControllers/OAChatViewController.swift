@@ -502,9 +502,13 @@ extension OAChatViewController {
                 return UITableViewCell()
             }
 
-            if case .chat(_, let messages, _, _) = self.chatManager.viewState,
+            if case .chat(_, let messages, _, let waitingState) = self.chatManager.viewState,
                let message = messages.first(where: { $0.id == messageID }) {
-                cell.configure(with: message)
+                // Determine if this message is currently being streamed
+                let isStreaming = waitingState == .receivingResponse && 
+                                messages.last?.id == messageID &&
+                                message.role == .assistant
+                cell.configure(with: message, isStreaming: isStreaming)
             } else {
                 cell.configure(with: "Message not found", role: .system)
             }

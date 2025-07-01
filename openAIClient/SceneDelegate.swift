@@ -50,7 +50,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
                 fatalError("Error retrieving API_KEY")
             }
             let configuration = URLSessionConfiguration.default
-            let service = OpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration)
+            let service = OpenAIServiceFactory.service(apiKey: apiKey, configuration: configuration, debugEnabled: false)
             let streamProvider = NetworkingStreamProvider(service: service)
             let coordinator = StreamingCoordinator(networkingProvider: streamProvider)
 

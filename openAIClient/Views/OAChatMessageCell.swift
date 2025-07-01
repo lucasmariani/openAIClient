@@ -13,6 +13,40 @@ class OAChatMessageCell: UITableViewCell {
     private let bubbleView = UIView()
     private let bubbleStackView = UIStackView()
     
+    // State tracking for differential updates
+    private var currentMessageHash: String?
+    private var currentRole: OARole?
+    private var currentWidthConstraint: NSLayoutConstraint?
+    
+    // Content segment tracking for incremental updates
+    private var currentContentSegments: [ContentSegment] = []
+    
+    // Content segment types for granular updates
+    private enum ContentSegment: Equatable {
+        case attachments([OAAttachment])
+        case text(String)
+        case code(String, language: String)
+        case streamingText(String) // Text that may contain incomplete code blocks
+        case generatedImages([Data])
+        
+        static func == (lhs: ContentSegment, rhs: ContentSegment) -> Bool {
+            switch (lhs, rhs) {
+            case (.attachments(let a), .attachments(let b)):
+                return a.count == b.count && zip(a, b).allSatisfy { $0.filename == $1.filename && $0.data == $1.data }
+            case (.text(let a), .text(let b)):
+                return a == b
+            case (.code(let a, let langA), .code(let b, let langB)):
+                return a == b && langA == langB
+            case (.streamingText(let a), .streamingText(let b)):
+                return a == b
+            case (.generatedImages(let a), .generatedImages(let b)):
+                return a == b
+            default:
+                return false
+            }
+        }
+    }
+    
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         setupSubviews()
@@ -60,33 +94,115 @@ class OAChatMessageCell: UITableViewCell {
         ])
     }
     
-    func configure(with message: OAChatMessage) {
-        // Configure bubble appearance based on role FIRST to prevent flashing
+    func configure(with message: OAChatMessage, isStreaming: Bool = false) {
+        print("DEBUG configure(with message called, isStreaming: \(isStreaming)")
+        
+        // Always update appearance first (handles role color changes)
         configureBubbleAppearance(for: message.role)
         
+        // Parse content into segments for incremental comparison
+        let newContentSegments = parseContentIntoSegments(for: message, isStreaming: isStreaming)
+        let changeType = detectIncrementalChange(from: currentContentSegments, to: newContentSegments)
+        
+        switch changeType {
+        case .noChange:
+            print("DEBUG no content change detected - skipping update")
+            
+        case .appendToLastText:
+            print("DEBUG detected append-only text change - updating in place")
+            if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
+               case .text(let newText) = newContentSegments.last {
+                updateTextView(lastView, with: newText, role: message.role)
+            } else {
+                // Fallback to full recreation if we can't find the text view
+                performFullContentUpdate(for: message)
+            }
+            
+        case .appendToLastStreamingText:
+            print("DEBUG detected append-only streaming text change - updating in place")
+            if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
+               case .streamingText(let newText) = newContentSegments.last {
+                updateTextView(lastView, with: newText, role: message.role)
+            } else {
+                // Fallback to full recreation if we can't find the text view
+                performFullContentUpdate(for: message)
+            }
+            
+        case .fullRecreation:
+            print("DEBUG performing full content recreation")
+            performFullContentUpdate(for: message)
+        }
+        
+        // Update stored segments and hash
+        currentContentSegments = newContentSegments
+        currentMessageHash = createContentHash(for: message)
+        
+        // Configure bubble alignment (only updates if role changed)
+        configureBubbleAlignment(for: message.role)
+    }
+    
+    private func updateTextView(_ textView: UITextView, with text: String, role: OARole) {
+        // Use built-in markdown support
+        let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        
+        if let attributedString {
+            let mutableString = NSMutableAttributedString(attributedString: attributedString)
+            
+            // Apply role-specific color
+            let color: UIColor = {
+                switch role {
+                case .user: return .white
+                case .assistant, .system: return .label
+                }
+            }()
+            
+            mutableString.addAttribute(
+                .foregroundColor,
+                value: color,
+                range: NSRange(location: 0, length: mutableString.length)
+            )
+            
+            // Set Dynamic Type font
+            mutableString.addAttribute(
+                .font,
+                value: UIFont.preferredFont(forTextStyle: .body),
+                range: NSRange(location: 0, length: mutableString.length)
+            )
+            
+            textView.attributedText = mutableString
+        } else {
+            // Fallback to plain text
+            textView.text = text
+            textView.textColor = role == .user ? .white : .label
+            textView.font = UIFont.preferredFont(forTextStyle: .body)
+        }
+    }
+    
+    private func performFullContentUpdate(for message: OAChatMessage) {
+        print("DEBUG removing all arrangedSubviews for full update")
         // Remove previous content
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        
-        // Add attachments first if any
-        if !message.attachments.isEmpty {
-            let attachmentView = createAttachmentView(for: message.attachments)
-            bubbleStackView.addArrangedSubview(attachmentView)
+
+        // Create views from the new content segments
+        for segment in currentContentSegments {
+            switch segment {
+            case .attachments(let attachments):
+                let attachmentView = createAttachmentView(for: attachments)
+                bubbleStackView.addArrangedSubview(attachmentView)
+                
+            case .text(let text), .streamingText(let text):
+                let textView = createFormattedTextView(from: text, role: message.role)
+                bubbleStackView.addArrangedSubview(textView)
+                
+            case .code(let code, let language):
+                let codeView = OACodeBlockView(code: code, language: language)
+                bubbleStackView.addArrangedSubview(codeView)
+                
+            case .generatedImages(let imageDatas):
+                let generatedImagesView = createGeneratedImagesView(from: imageDatas)
+                bubbleStackView.addArrangedSubview(generatedImagesView)
+            }
         }
-        
-        // Parse and add text content
-        if !message.content.isEmpty {
-            let messageViews = parseMessage(message.content, role: message.role)
-            messageViews.forEach { bubbleStackView.addArrangedSubview($0) }
-        }
-        
-        // Add generated images if any
-        if let imageData = message.imageData {
-            let generatedImagesView = createGeneratedImagesView(from: [imageData])
-            bubbleStackView.addArrangedSubview(generatedImagesView)
-        }
-        
-        // Configure bubble alignment and width constraints
-        configureBubbleAlignment(for: message.role)
     }
     
     func configure(with message: String, role: OARole) {
@@ -95,6 +211,9 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     private func configureBubbleAppearance(for role: OARole) {
+        // Only update appearance if role changed (avoids redundant color updates)
+        guard currentRole != role else { return }
+        
         switch role {
         case .user:
             bubbleView.backgroundColor = UIColor.systemBlue
@@ -109,39 +228,206 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     private func configureBubbleAlignment(for role: OARole) {
-        // Remove any existing width constraints
-        bubbleView.constraints.forEach { constraint in
-            if constraint.firstAttribute == .width {
-                constraint.isActive = false
-            }
-        }
+        // Only update if role actually changed
+        guard currentRole != role else { return }
+        
+        // Remove existing width constraint if any
+        currentWidthConstraint?.isActive = false
         
         switch role {
         case .user:
             // User messages: align to trailing edge, max 80% width
             messageStackView.alignment = .trailing
-            NSLayoutConstraint.activate([
-                bubbleView.widthAnchor.constraint(lessThanOrEqualTo: messageStackView.widthAnchor, multiplier: 0.8)
-            ])
+            currentWidthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualTo: messageStackView.widthAnchor, multiplier: 0.8)
         case .assistant, .system:
             // Assistant/system messages: align to leading edge, max 90% width
             messageStackView.alignment = .leading
-            NSLayoutConstraint.activate([
-                bubbleView.widthAnchor.constraint(lessThanOrEqualTo: messageStackView.widthAnchor, multiplier: 0.9)
-            ])
+            currentWidthConstraint = bubbleView.widthAnchor.constraint(lessThanOrEqualTo: messageStackView.widthAnchor, multiplier: 0.9)
         }
+        
+        // Activate the new constraint
+        currentWidthConstraint?.isActive = true
+        currentRole = role
+    }
+    
+    private func createContentHash(for message: OAChatMessage) -> String {
+        print("DEBUG new content hash created")
+        var hashComponents: [String] = []
+        
+        // Include role
+        hashComponents.append("role:\(message.role.rawValue)")
+        
+        // Include content
+        hashComponents.append("content:\(message.content)")
+        
+        // Include attachments hash
+        let attachmentHashes = message.attachments.map { attachment in
+            "attachment:\(attachment.filename):\(attachment.data.count)"
+        }
+        hashComponents.append(contentsOf: attachmentHashes)
+        
+        // Include image data hash
+        if let imageData = message.imageData {
+            hashComponents.append("imageData:\(imageData.count)")
+        }
+        
+        return hashComponents.joined(separator: "|")
+    }
+    
+    private func parseContentIntoSegments(for message: OAChatMessage, isStreaming: Bool = false) -> [ContentSegment] {
+        var segments: [ContentSegment] = []
+        
+        // Add attachments first if any
+        if !message.attachments.isEmpty {
+            segments.append(.attachments(message.attachments))
+        }
+        
+        // Parse text content with streaming awareness
+        if !message.content.isEmpty {
+            if isStreaming {
+                segments.append(contentsOf: parseStreamingContent(message.content))
+            } else {
+                segments.append(contentsOf: parseCompletedContent(message.content))
+            }
+        }
+        
+        // Add generated images if any
+        if let imageData = message.imageData {
+            segments.append(.generatedImages([imageData]))
+        }
+        
+        return segments
+    }
+    
+    private func parseStreamingContent(_ content: String) -> [ContentSegment] {
+        // During streaming, only recognize complete code blocks to maintain stable structure
+        var segments: [ContentSegment] = []
+        
+        // Find complete code blocks (with closing ```)
+        let completeCodePattern = "```([a-zA-Z0-9]*)\n(.*?)\n```"
+        let regex = try? NSRegularExpression(pattern: completeCodePattern, options: [.dotMatchesLineSeparators])
+        let nsContent = content as NSString
+        let range = NSRange(location: 0, length: content.count)
+        
+        var lastProcessedLocation = 0
+        var hasCompleteCodeBlocks = false
+        
+        if let regex = regex {
+            regex.enumerateMatches(in: content, options: [], range: range) { match, _, _ in
+                guard let match = match else { return }
+                hasCompleteCodeBlocks = true
+                
+                // Add text before this code block
+                if match.range.location > lastProcessedLocation {
+                    let beforeRange = NSRange(location: lastProcessedLocation, length: match.range.location - lastProcessedLocation)
+                    let beforeText = nsContent.substring(with: beforeRange)
+                    if !beforeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        segments.append(.text(beforeText))
+                    }
+                }
+                
+                // Add the complete code block
+                let languageRange = match.range(at: 1)
+                let codeRange = match.range(at: 2)
+                let language = nsContent.substring(with: languageRange)
+                let code = nsContent.substring(with: codeRange)
+                segments.append(.code(code, language: language.isEmpty ? "swift" : language))
+                
+                lastProcessedLocation = match.range.location + match.range.length
+            }
+        }
+        
+        // Handle remaining text (which may contain incomplete code blocks)
+        if lastProcessedLocation < content.count {
+            let remainingText = nsContent.substring(from: lastProcessedLocation)
+            if !remainingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // During streaming, treat remaining text (including incomplete code) as streamingText
+                segments.append(.streamingText(remainingText))
+            }
+        } else if !hasCompleteCodeBlocks && !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // No complete code blocks found, treat entire content as streaming text
+            segments.append(.streamingText(content))
+        }
+        
+        return segments
+    }
+    
+    private func parseCompletedContent(_ content: String) -> [ContentSegment] {
+        // For completed messages, use the original parsing logic
+        var segments: [ContentSegment] = []
+        let components = content.components(separatedBy: "```")
+        
+        for (index, component) in components.enumerated() {
+            if index % 2 == 0 {
+                // Regular text
+                if !component.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    segments.append(.text(component))
+                }
+            } else {
+                // Code block - detect language from first line
+                let lines = component.components(separatedBy: .newlines)
+                let language = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "swift"
+                let code = lines.dropFirst().joined(separator: "\n")
+                segments.append(.code(code, language: language))
+            }
+        }
+        
+        return segments
+    }
+    
+    private func detectIncrementalChange(from oldSegments: [ContentSegment], to newSegments: [ContentSegment]) -> IncrementalChangeType {
+        // Check for simple append-only case (most common during streaming)
+        if oldSegments.count == newSegments.count,
+           oldSegments.count > 0,
+           oldSegments.dropLast().elementsEqual(newSegments.dropLast()) {
+            
+            let oldLast = oldSegments.last!
+            let newLast = newSegments.last!
+            
+            // Check if last segment is text and we're just appending
+            if case .text(let oldText) = oldLast,
+               case .text(let newText) = newLast,
+               newText.hasPrefix(oldText) {
+                return .appendToLastText
+            }
+            
+            // Check if last segment is streaming text and we're just appending
+            if case .streamingText(let oldText) = oldLast,
+               case .streamingText(let newText) = newLast,
+               newText.hasPrefix(oldText) {
+                return .appendToLastStreamingText
+            }
+        }
+        
+        // Check for complete structure equality
+        if oldSegments == newSegments {
+            return .noChange
+        }
+        
+        // For now, fall back to full recreation for complex changes
+        return .fullRecreation
+    }
+    
+    private enum IncrementalChangeType {
+        case noChange
+        case appendToLastText
+        case appendToLastStreamingText
+        case fullRecreation
     }
     
     override func prepareForReuse() {
         super.prepareForReuse()
+        print("DEBUG prepareForReuse called")
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
         // Remove dynamic width constraints
-        bubbleView.constraints.forEach { constraint in
-            if constraint.firstAttribute == .width {
-                constraint.isActive = false
-            }
-        }
+        currentWidthConstraint?.isActive = false
+        currentWidthConstraint = nil
+        
+        // Clear state tracking
+        currentMessageHash = nil
+        currentRole = nil
+        currentContentSegments = []
     }
     
     @MainActor func parseMessage(_ message: String, role: OARole) -> [UIView] {
