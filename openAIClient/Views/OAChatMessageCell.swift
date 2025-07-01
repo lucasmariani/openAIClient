@@ -95,7 +95,7 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     func configure(with message: OAChatMessage, isStreaming: Bool = false) {
-        print("DEBUG configure(with message called, isStreaming: \(isStreaming)")
+//        print("DEBUG configure(with message called, isStreaming: \(isStreaming)")
         
         // Always update appearance first (handles role color changes)
         configureBubbleAppearance(for: message.role)
@@ -106,10 +106,10 @@ class OAChatMessageCell: UITableViewCell {
         
         switch changeType {
         case .noChange:
-            print("DEBUG no content change detected - skipping update")
-            
+            break
+
         case .appendToLastText:
-            print("DEBUG detected append-only text change - updating in place")
+//            print("DEBUG detected append-only text change - updating in place")
             if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
                case .text(let newText) = newContentSegments.last {
                 updateTextView(lastView, with: newText, role: message.role)
@@ -119,7 +119,7 @@ class OAChatMessageCell: UITableViewCell {
             }
             
         case .appendToLastStreamingText:
-            print("DEBUG detected append-only streaming text change - updating in place")
+//            print("DEBUG detected append-only streaming text change - updating in place")
             if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
                case .streamingText(let newText) = newContentSegments.last {
                 updateTextView(lastView, with: newText, role: message.role)
@@ -129,7 +129,8 @@ class OAChatMessageCell: UITableViewCell {
             }
             
         case .fullRecreation:
-            print("DEBUG performing full content recreation")
+//            print("DEBUG performing full content recreation")
+            currentContentSegments = newContentSegments
             performFullContentUpdate(for: message)
         }
         
@@ -179,7 +180,7 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     private func performFullContentUpdate(for message: OAChatMessage) {
-        print("DEBUG removing all arrangedSubviews for full update")
+//        print("DEBUG removing all arrangedSubviews for full update")
         // Remove previous content
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
@@ -251,7 +252,7 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     private func createContentHash(for message: OAChatMessage) -> String {
-        print("DEBUG new content hash created")
+//        print("DEBUG new content hash created")
         var hashComponents: [String] = []
         
         // Include role
@@ -417,7 +418,7 @@ class OAChatMessageCell: UITableViewCell {
     
     override func prepareForReuse() {
         super.prepareForReuse()
-        print("DEBUG prepareForReuse called")
+//        print("DEBUG prepareForReuse called")
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
         
         // Remove dynamic width constraints
