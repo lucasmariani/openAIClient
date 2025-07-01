@@ -109,8 +109,6 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     func configure(with message: OAChatMessage, isStreaming: Bool = false) {
-//        print("DEBUG configure(with message called, isStreaming: \(isStreaming)")
-        
         // Always update appearance first (handles role color changes)
         configureBubbleAppearance(for: message.role)
         

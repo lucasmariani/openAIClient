@@ -396,8 +396,8 @@ final class OAChatManager {
             // Update UI state - add message to array on first content, update thereafter
             if chatId == currentChatId {
                 // Check if we have actual content to display
-                let hasContent = !responseMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                
+                let hasContent = !responseMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || responseMessage.imageData != nil
+
                 // Check if message already exists in local array
                 let messageExists = messages.contains { $0.id == responseMessage.id }
                 
@@ -459,8 +459,8 @@ final class OAChatManager {
                 } else {
                     // Check if content actually changed from last streaming update
                     let existingMessage = messages.first { $0.id == responseMessage.id }
-                    let contentChanged = existingMessage?.content != responseMessage.content
-                    
+                    let contentChanged = existingMessage?.content != responseMessage.content || existingMessage?.imageData != responseMessage.imageData
+
                     updateMessageInLocalArray(responseMessage)
                     
                     // Only trigger reconfiguration if content actually changed
@@ -506,25 +506,6 @@ final class OAChatManager {
         case .imageGenerationCompleted(let itemId, let results):
             print("🎨 ChatManager: Image generation completed for item: \(itemId), \(results.count) images generated")
 
-            // Extract image data from results
-            if let newImageData = results.compactMap({ $0.imageData }).first {
-
-                // Find the current assistant message being streamed
-                if let lastMessageIndex = messages.lastIndex(where: { $0.role == OARole.assistant }) {
-                    // Create updated message with generated images
-                    var updatedMessage = messages[lastMessageIndex]
-                    updatedMessage.updateGeneratedImage(newImageData)
-                    messages[lastMessageIndex] = updatedMessage
-
-                    // Trigger UI update
-                    if chatId == currentChatId {
-                        let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: updatedMessage.id, waitingState: .none)
-                        viewState = newViewState
-                        uiEventContinuation.yield(.viewStateChanged(newViewState))
-                        print("🎨 ChatManager: Updated UI with generated image")
-                    }
-                }
-            }
             //        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
             //            break
             //        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
