@@ -9,9 +9,15 @@ import Foundation
 import Observation
 import OpenAIForSwift
 
+enum WaitingState {
+    case none                   // No waiting or streaming
+    case waitingForResponse     // User sent message, waiting for API response or content
+    case receivingResponse      // API response is streaming with visible content
+}
+
 enum ChatViewState {
     case empty
-    case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil, isStreaming: Bool = false)
+    case chat(id: String, messages: [OAChatMessage], reconfiguringMessageID: String? = nil, waitingState: WaitingState = .none)
     case loading
     case error(String)
 
@@ -21,6 +27,25 @@ enum ChatViewState {
             return id
         default:
             return nil
+        }
+    }
+    
+    // Backward compatibility helpers
+    var isStreaming: Bool {
+        switch self {
+        case .chat(_, _, _, let waitingState):
+            return waitingState != .none
+        default:
+            return false
+        }
+    }
+    
+    var isWaitingForResponse: Bool {
+        switch self {
+        case .chat(_, _, _, .waitingForResponse):
+            return true
+        default:
+            return false
         }
     }
 }
@@ -176,7 +201,7 @@ final class OAChatManager {
             selectedModel = chat.selectedModel
 
             if let chatId = currentChatId {
-                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, waitingState: .none)
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
             } else {
@@ -201,9 +226,9 @@ final class OAChatManager {
     func sendMessage(_ chatMessage: OAChatMessage) {
         guard let currentChatId else { return }
 
-        // Optimistically add user message to UI
+        // Optimistically add user message to UI with waiting state
         messages.append(chatMessage)
-        let newViewState = ChatViewState.chat(id: currentChatId, messages: messages, reconfiguringMessageID: chatMessage.id, isStreaming: true)
+        let newViewState = ChatViewState.chat(id: currentChatId, messages: messages, reconfiguringMessageID: chatMessage.id, waitingState: .waitingForResponse)
         viewState = newViewState
         uiEventContinuation.yield(.viewStateChanged(newViewState))
 
@@ -321,13 +346,12 @@ final class OAChatManager {
                 print("❌ Failed to save initial message to Core Data: \(error)")
             }
 
-            // Update UI state
+            // Update UI state - don't add empty message to array yet, just show waiting indicator
             if chatId == currentChatId {
-                messages.append(chatMessage)
-                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: chatMessage.id, isStreaming: true)
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, waitingState: .waitingForResponse)
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
-                print("📊 ChatManager: Updated viewState to streaming with \(messages.count) messages")
+                print("📊 ChatManager: messageStarted - showing waiting indicator, not adding empty message to UI yet")
             }
 
         case .messageUpdated(let message):
@@ -347,13 +371,35 @@ final class OAChatManager {
                 print("⚠️ Failed to update message \(responseMessage.id) in Core Data: \(error)")
             }
 
-            // Update UI state
+            // Update UI state - add message to array on first content, update thereafter
             if chatId == currentChatId {
-                updateMessageInLocalArray(responseMessage)
-                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, isStreaming: true)
-                viewState = newViewState
-                uiEventContinuation.yield(.viewStateChanged(newViewState))
-                print("📊 ChatManager: Updated viewState to streaming with \(messages.count) messages")
+                // Check if we have actual content to display
+                let hasContent = !responseMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                
+                // Check if message already exists in local array
+                let messageExists = messages.contains { $0.id == responseMessage.id }
+                
+                if hasContent && !messageExists {
+                    // First time we have content - add message to array and transition to receiving
+                    messages.append(responseMessage)
+                    let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, waitingState: .receivingResponse)
+                    viewState = newViewState
+                    uiEventContinuation.yield(.viewStateChanged(newViewState))
+                    print("📊 ChatManager: First content received - added message to UI and transitioned to receivingResponse")
+                } else if hasContent && messageExists {
+                    // Message exists and has content - update it
+                    updateMessageInLocalArray(responseMessage)
+                    let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, waitingState: .receivingResponse)
+                    viewState = newViewState
+                    uiEventContinuation.yield(.viewStateChanged(newViewState))
+                    print("📊 ChatManager: Content updated - staying in receivingResponse")
+                } else {
+                    // No content yet - stay in waiting state
+                    let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, waitingState: .waitingForResponse)
+                    viewState = newViewState
+                    uiEventContinuation.yield(.viewStateChanged(newViewState))
+                    print("📊 ChatManager: No content yet - staying in waitingForResponse")
+                }
             }
 
         case .messageCompleted(let message):
@@ -377,11 +423,19 @@ final class OAChatManager {
 
             // Update UI state
             if chatId == currentChatId {
-                updateMessageInLocalArray(responseMessage)
-                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, isStreaming: false)
+                // Check if message exists in array - if not, add it (edge case handling)
+                let messageExists = messages.contains { $0.id == responseMessage.id }
+                if !messageExists {
+                    messages.append(responseMessage)
+                    print("📊 ChatManager: messageCompleted - message didn't exist in array, added it")
+                } else {
+                    updateMessageInLocalArray(responseMessage)
+                }
+                
+                let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: responseMessage.id, waitingState: .none)
                 viewState = newViewState
                 uiEventContinuation.yield(.viewStateChanged(newViewState))
-                print("📊 ChatManager: messageCompleted. Updated viewState to non-streaming with \(messages.count) messages")
+                print("📊 ChatManager: messageCompleted. Updated viewState to none waiting state with \(messages.count) messages")
 
                 // Generate title after first assistant response
                 if responseMessage.role == OARole.assistant && shouldGenerateTitle() {
@@ -426,7 +480,7 @@ final class OAChatManager {
 
                     // Trigger UI update
                     if chatId == currentChatId {
-                        let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: updatedMessage.id, isStreaming: false)
+                        let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: updatedMessage.id, waitingState: .none)
                         viewState = newViewState
                         uiEventContinuation.yield(.viewStateChanged(newViewState))
                         print("🎨 ChatManager: Updated UI with generated image")
@@ -473,8 +527,8 @@ final class OAChatManager {
                 messages.remove(at: lastMessageIndex)
             }
 
-            // Update viewState to non-streaming and show error alert
-            let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, isStreaming: false)
+            // Update viewState to clear waiting state and show error alert
+            let newViewState = ChatViewState.chat(id: chatId, messages: messages, reconfiguringMessageID: nil, waitingState: .none)
             viewState = newViewState
             uiEventContinuation.yield(.viewStateChanged(newViewState))
             uiEventContinuation.yield(.showErrorAlert(userErrorMessage))

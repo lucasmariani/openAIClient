@@ -20,6 +20,7 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
     private struct Constants {
         static let emptyPlaceholder = ChatStateIdentifier.emptyPlaceholder.rawValue
         static let errorPlaceholder = ChatStateIdentifier.errorPlaceholder.rawValue
+        static let waitingIndicator = "waiting_indicator"
         static let emptyPlaceholerText = "Select a chat to start messaging"
         static let errorPlaceholderText = "Error loading chat"
         static let streamingPlacerholderText = "Streaming response..."
@@ -347,22 +348,18 @@ class OAChatViewController: UIViewController, CustomChatInputTextViewDelegate {
             attachButton.isEnabled = false
             inputTextView.text = ""
 
-        case .chat(let id, let messages, let reconfiguringMessageID, let isStreaming):
-            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID))
-            sendButton.isEnabled = !isStreaming && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
-            inputTextView.isEditable = !isStreaming
-            attachButton.isEnabled = !isStreaming
-
-            // Only update text field if transitioning to/from streaming state or if it contains streaming placeholder
-            if isStreaming {
-                inputTextView.text = "Receiving message..."
-                inputTextView.textColor = .systemGray2
-            } else if inputTextView.text == "Receiving message..." {
-                // Reset text field when streaming ends
+        case .chat(let id, let messages, let reconfiguringMessageID, let waitingState):
+            updateSnapshot(for: .chat(id: id, messages: messages, reconfiguringMessageID: reconfiguringMessageID, waitingState: waitingState))
+            
+            let inputDisabled = waitingState != .none
+            sendButton.isEnabled = !inputDisabled && (!inputTextView.text.isEmpty || !pendingAttachments.isEmpty)
+            inputTextView.isEditable = !inputDisabled
+            attachButton.isEnabled = !inputDisabled
+            
+            // Clear any placeholder text from input field when disabled
+            if inputDisabled && (inputTextView.text == "Receiving message..." || inputTextView.text == "Waiting...") {
                 inputTextView.text = ""
                 inputTextView.textColor = .label
-                // Update send button state after resetting text field
-                sendButton.isEnabled = !inputTextView.text.isEmpty || !pendingAttachments.isEmpty
             }
 
         case .loading:
@@ -495,6 +492,11 @@ extension OAChatViewController {
                 return cell
             }
 
+            // Handle waiting indicator
+            if messageID == Constants.waitingIndicator {
+                return self.createWaitingIndicatorCell(for: tableView, at: indexPath)
+            }
+
             // Handle normal message case
             guard let cell = tableView.dequeueReusableCell(withIdentifier: Constants.cellId, for: indexPath) as? OAChatMessageCell else {
                 return UITableViewCell()
@@ -511,6 +513,56 @@ extension OAChatViewController {
         self.tableView.dataSource = self.dataSource
     }
 
+    private func createWaitingIndicatorCell(for tableView: UITableView, at indexPath: IndexPath) -> UITableViewCell {
+        let cell = UITableViewCell()
+        cell.selectionStyle = .none
+        cell.backgroundColor = .clear
+        
+        // Create bubble container (similar to assistant message style)
+        let bubbleView = UIView()
+        bubbleView.backgroundColor = .systemGray6
+        bubbleView.layer.cornerRadius = 16
+        bubbleView.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Create animated dots label
+        let dotsLabel = UILabel()
+        dotsLabel.text = "●●●"
+        dotsLabel.textColor = .systemGray2
+        dotsLabel.font = .systemFont(ofSize: 16)
+        dotsLabel.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add pulsing animation
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = 0.3
+        animation.toValue = 1.0
+        animation.duration = 0.8
+        animation.repeatCount = .infinity
+        animation.autoreverses = true
+        dotsLabel.layer.add(animation, forKey: "pulse")
+        
+        bubbleView.addSubview(dotsLabel)
+        cell.contentView.addSubview(bubbleView)
+        
+        NSLayoutConstraint.activate([
+            // Bubble positioning (left-aligned like assistant messages)
+            bubbleView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+            bubbleView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
+            bubbleView.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8),
+            bubbleView.widthAnchor.constraint(greaterThanOrEqualToConstant: 60),
+            bubbleView.trailingAnchor.constraint(lessThanOrEqualTo: cell.contentView.trailingAnchor, constant: -80),
+            
+            // Dots label inside bubble
+            dotsLabel.centerXAnchor.constraint(equalTo: bubbleView.centerXAnchor),
+            dotsLabel.centerYAnchor.constraint(equalTo: bubbleView.centerYAnchor),
+            dotsLabel.leadingAnchor.constraint(equalTo: bubbleView.leadingAnchor, constant: 16),
+            dotsLabel.trailingAnchor.constraint(equalTo: bubbleView.trailingAnchor, constant: -16),
+            dotsLabel.topAnchor.constraint(equalTo: bubbleView.topAnchor, constant: 12),
+            dotsLabel.bottomAnchor.constraint(equalTo: bubbleView.bottomAnchor, constant: -12)
+        ])
+        
+        return cell
+    }
+
     private func updateSnapshot(for state: ChatViewState, animatingDifferences: Bool = true) {
         var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
         snapshot.appendSections([0])
@@ -519,9 +571,14 @@ extension OAChatViewController {
         case .empty:
             snapshot.appendItems([Constants.emptyPlaceholder])
             
-        case .chat(_, let messages, let reconfiguringMessageID, _):
+        case .chat(_, let messages, let reconfiguringMessageID, let waitingState):
             let messageIDs = messages.map { $0.id }
             snapshot.appendItems(messageIDs)
+            
+            // Add waiting indicator if we're waiting for response
+            if waitingState == .waitingForResponse {
+                snapshot.appendItems([Constants.waitingIndicator])
+            }
             
             // If a specific item ID needs reconfiguring, tell the snapshot
             if let itemID = reconfiguringMessageID, messageIDs.contains(itemID) {
@@ -640,8 +697,9 @@ extension OAChatViewController: UIDocumentPickerDelegate {
 
         // Update send button state
         let hasContent = !(inputTextView.text?.isEmpty ?? true) || !pendingAttachments.isEmpty
-        if case .chat(_, _, _, let isStreaming) = chatManager.viewState {
-            sendButton.isEnabled = !isStreaming && hasContent
+        if case .chat(_, _, _, let waitingState) = chatManager.viewState {
+            let inputDisabled = waitingState != .none
+            sendButton.isEnabled = !inputDisabled && hasContent
         }
     }
 }

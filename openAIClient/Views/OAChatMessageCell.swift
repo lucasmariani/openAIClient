@@ -61,11 +61,11 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     func configure(with message: OAChatMessage) {
+        // Configure bubble appearance based on role FIRST to prevent flashing
+        configureBubbleAppearance(for: message.role)
+        
         // Remove previous content
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        
-        // Configure bubble appearance based on role
-        configureBubbleAppearance(for: message.role)
         
         // Add attachments first if any
         if !message.attachments.isEmpty {
