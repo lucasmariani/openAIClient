@@ -21,12 +21,24 @@ class OAChatMessageCell: UITableViewCell {
     // Content segment tracking for incremental updates
     private var currentContentSegments: [ContentSegment] = []
     
+    // Pre-compiled regex patterns for better performance
+    private static let completeCodeBlockRegex: NSRegularExpression = {
+        let pattern = "```([a-zA-Z0-9]*)\n(.*?)\n```"
+        return try! NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+    }()
+    
+    private static let incompleteCodeBlockRegex: NSRegularExpression = {
+        let pattern = "```[a-zA-Z0-9]*(?:\n.*)?$"
+        return try! NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators])
+    }()
+    
     // Content segment types for granular updates
     private enum ContentSegment: Equatable {
         case attachments([OAAttachment])
         case text(String)
         case code(String, language: String)
         case streamingText(String) // Text that may contain incomplete code blocks
+        case partialCode(String, language: String) // Incomplete code block during streaming
         case generatedImages([Data])
         
         static func == (lhs: ContentSegment, rhs: ContentSegment) -> Bool {
@@ -39,6 +51,8 @@ class OAChatMessageCell: UITableViewCell {
                 return a == b && langA == langB
             case (.streamingText(let a), .streamingText(let b)):
                 return a == b
+            case (.partialCode(let a, let langA), .partialCode(let b, let langB)):
+                return a == b && langA == langB
             case (.generatedImages(let a), .generatedImages(let b)):
                 return a == b
             default:
@@ -123,8 +137,12 @@ class OAChatMessageCell: UITableViewCell {
             if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
                case .streamingText(let newText) = newContentSegments.last {
                 updateTextView(lastView, with: newText, role: message.role)
+            } else if let lastView = bubbleStackView.arrangedSubviews.last as? OAPartialCodeBlockView,
+                      case .partialCode(let newCode, let newLang) = newContentSegments.last {
+                // Update partial code block in place
+                lastView.updateContent(partialCode: newCode, possibleLanguage: newLang)
             } else {
-                // Fallback to full recreation if we can't find the text view
+                // Fallback to full recreation if we can't find the appropriate view
                 performFullContentUpdate(for: message)
             }
             
@@ -143,40 +161,38 @@ class OAChatMessageCell: UITableViewCell {
     }
     
     private func updateTextView(_ textView: UITextView, with text: String, role: OARole) {
-        // Use built-in markdown support
-        let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        // Use cached attributed string for better performance
+        let newAttributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
         
-        if let attributedString {
-            let mutableString = NSMutableAttributedString(attributedString: attributedString)
+        // Use textStorage for efficient updates when possible
+        let textStorage = textView.textStorage
+        
+        // Calculate the difference between old and new text
+        let oldLength = textStorage.length
+        let newLength = newAttributedString.length
+        
+        // For append-only updates during streaming, we can be more efficient
+        if newLength > oldLength {
+            // Extract just the new portion
+            let oldText = textStorage.string
+            let newText = newAttributedString.string
             
-            // Apply role-specific color
-            let color: UIColor = {
-                switch role {
-                case .user: return .white
-                case .assistant, .system: return .label
-                }
-            }()
-            
-            mutableString.addAttribute(
-                .foregroundColor,
-                value: color,
-                range: NSRange(location: 0, length: mutableString.length)
-            )
-            
-            // Set Dynamic Type font
-            mutableString.addAttribute(
-                .font,
-                value: UIFont.preferredFont(forTextStyle: .body),
-                range: NSRange(location: 0, length: mutableString.length)
-            )
-            
-            textView.attributedText = mutableString
-        } else {
-            // Fallback to plain text
-            textView.text = text
-            textView.textColor = role == .user ? .white : .label
-            textView.font = UIFont.preferredFont(forTextStyle: .body)
+            if newText.hasPrefix(oldText) {
+                // This is an append-only update - just add the new content
+                let appendRange = NSRange(location: oldLength, length: 0)
+                let newPortion = newAttributedString.attributedSubstring(
+                    from: NSRange(location: oldLength, length: newLength - oldLength)
+                )
+                
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: appendRange, with: newPortion)
+                textStorage.endEditing()
+                return
+            }
         }
+        
+        // Fallback to full replacement for other cases
+        textView.attributedText = newAttributedString
     }
     
     private func performFullContentUpdate(for message: OAChatMessage) {
@@ -198,6 +214,10 @@ class OAChatMessageCell: UITableViewCell {
             case .code(let code, let language):
                 let codeView = OACodeBlockView(code: code, language: language)
                 bubbleStackView.addArrangedSubview(codeView)
+                
+            case .partialCode(let code, let language):
+                let partialCodeView = OAPartialCodeBlockView(partialCode: code, possibleLanguage: language)
+                bubbleStackView.addArrangedSubview(partialCodeView)
                 
             case .generatedImages(let imageDatas):
                 let generatedImagesView = createGeneratedImagesView(from: imageDatas)
@@ -304,17 +324,14 @@ class OAChatMessageCell: UITableViewCell {
         // During streaming, only recognize complete code blocks to maintain stable structure
         var segments: [ContentSegment] = []
         
-        // Find complete code blocks (with closing ```)
-        let completeCodePattern = "```([a-zA-Z0-9]*)\n(.*?)\n```"
-        let regex = try? NSRegularExpression(pattern: completeCodePattern, options: [.dotMatchesLineSeparators])
+        // Use pre-compiled regex for better performance
         let nsContent = content as NSString
         let range = NSRange(location: 0, length: content.count)
         
         var lastProcessedLocation = 0
         var hasCompleteCodeBlocks = false
         
-        if let regex = regex {
-            regex.enumerateMatches(in: content, options: [], range: range) { match, _, _ in
+        Self.completeCodeBlockRegex.enumerateMatches(in: content, options: [], range: range) { match, _, _ in
                 guard let match = match else { return }
                 hasCompleteCodeBlocks = true
                 
@@ -335,19 +352,74 @@ class OAChatMessageCell: UITableViewCell {
                 segments.append(.code(code, language: language.isEmpty ? "swift" : language))
                 
                 lastProcessedLocation = match.range.location + match.range.length
-            }
         }
         
         // Handle remaining text (which may contain incomplete code blocks)
         if lastProcessedLocation < content.count {
             let remainingText = nsContent.substring(from: lastProcessedLocation)
             if !remainingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // During streaming, treat remaining text (including incomplete code) as streamingText
-                segments.append(.streamingText(remainingText))
+                // Check if remaining text contains an incomplete code block
+                let incompleteRange = NSRange(location: 0, length: remainingText.count)
+                if let incompleteMatch = Self.incompleteCodeBlockRegex.firstMatch(in: remainingText, options: [], range: incompleteRange) {
+                    // Split into text before the incomplete code block and the partial code
+                    let beforeCodeRange = NSRange(location: 0, length: incompleteMatch.range.location)
+                    if beforeCodeRange.length > 0 {
+                        let beforeText = (remainingText as NSString).substring(with: beforeCodeRange)
+                        if !beforeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            segments.append(.text(beforeText))
+                        }
+                    }
+                    
+                    // Extract partial code block
+                    let partialCode = (remainingText as NSString).substring(with: incompleteMatch.range)
+                    var language = ""
+                    
+                    // Try to extract language from the partial block
+                    if partialCode.hasPrefix("```") {
+                        let afterMarker = String(partialCode.dropFirst(3))
+                        if let newlineIndex = afterMarker.firstIndex(of: "\n") {
+                            language = String(afterMarker[..<newlineIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        } else {
+                            // No newline yet, everything after ``` is potential language
+                            language = afterMarker.trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                    }
+                    
+                    segments.append(.partialCode(partialCode, language: language))
+                } else {
+                    // No incomplete code block, treat as streaming text
+                    segments.append(.streamingText(remainingText))
+                }
             }
         } else if !hasCompleteCodeBlocks && !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // No complete code blocks found, treat entire content as streaming text
-            segments.append(.streamingText(content))
+            // No complete code blocks found, check for partial code block
+            let range = NSRange(location: 0, length: content.count)
+            if let incompleteMatch = Self.incompleteCodeBlockRegex.firstMatch(in: content, options: [], range: range) {
+                // Content starts with an incomplete code block
+                let beforeCodeRange = NSRange(location: 0, length: incompleteMatch.range.location)
+                if beforeCodeRange.length > 0 {
+                    let beforeText = nsContent.substring(with: beforeCodeRange)
+                    if !beforeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        segments.append(.text(beforeText))
+                    }
+                }
+                
+                let partialCode = nsContent.substring(with: incompleteMatch.range)
+                var language = ""
+                if partialCode.hasPrefix("```") {
+                    let afterMarker = String(partialCode.dropFirst(3))
+                    if let newlineIndex = afterMarker.firstIndex(of: "\n") {
+                        language = String(afterMarker[..<newlineIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        language = afterMarker.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                
+                segments.append(.partialCode(partialCode, language: language))
+            } else {
+                // No code blocks at all, treat as streaming text
+                segments.append(.streamingText(content))
+            }
         }
         
         return segments
@@ -396,6 +468,13 @@ class OAChatMessageCell: UITableViewCell {
             if case .streamingText(let oldText) = oldLast,
                case .streamingText(let newText) = newLast,
                newText.hasPrefix(oldText) {
+                return .appendToLastStreamingText
+            }
+            
+            // Check if last segment is partial code and we're just appending
+            if case .partialCode(let oldCode, _) = oldLast,
+               case .partialCode(let newCode, _) = newLast,
+               newCode.hasPrefix(oldCode) {
                 return .appendToLastStreamingText
             }
         }
@@ -463,40 +542,9 @@ class OAChatMessageCell: UITableViewCell {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         
-        // Use built-in markdown support
-        let attributedString = try? NSAttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-        
-        if let attributedString {
-            let mutableString = NSMutableAttributedString(attributedString: attributedString)
-            
-            // Apply role-specific color
-            let color: UIColor = {
-                switch role {
-                case .user: return .white
-                case .assistant, .system: return .label
-                }
-            }()
-            
-            mutableString.addAttribute(
-                .foregroundColor,
-                value: color,
-                range: NSRange(location: 0, length: mutableString.length)
-            )
-            
-            // Set Dynamic Type font
-            mutableString.addAttribute(
-                .font,
-                value: UIFont.preferredFont(forTextStyle: .body),
-                range: NSRange(location: 0, length: mutableString.length)
-            )
-            
-            textView.attributedText = mutableString
-        } else {
-            // Fallback to plain text
-            textView.text = text
-            textView.textColor = role == .user ? .white : .label
-            textView.font = UIFont.preferredFont(forTextStyle: .body)
-        }
+        // Use cached attributed string for better performance
+        let attributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
+        textView.attributedText = attributedString
         
         return textView
     }

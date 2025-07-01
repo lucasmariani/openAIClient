@@ -78,6 +78,9 @@ final class OAChatManager {
     var userLocation: UserLocation? = nil
 
     private var streamingTask: Task<Void, Never>?
+    
+    // Streaming optimization with ring buffers
+    private var streamingBuffers: [String: StreamingTextBuffer] = [:] // messageId -> buffer
 
     // UI Event Stream - for complex state changes
     private let uiEventContinuation: AsyncStream<ChatUIEvent>.Continuation
@@ -323,6 +326,7 @@ final class OAChatManager {
         currentChatId = nil
         messages = []
         viewState = .empty
+        streamingBuffers.removeAll() // Clean up any active buffers
         uiEventContinuation.yield(.viewStateChanged(.empty))
     }
 
@@ -338,6 +342,9 @@ final class OAChatManager {
                 date: message.timestamp,
                 imageData: message.imageData
             )
+            
+            // Initialize ring buffer for this message
+            streamingBuffers[message.responseId] = StreamingTextBuffer()
 
             // Save initial message to Core Data
             do {
@@ -356,6 +363,21 @@ final class OAChatManager {
 
         case .messageUpdated(let message):
             print("🟡 ChatManager: Updating message with ID: \(message.responseId) for chat: \(chatId)")
+            
+            // Use ring buffer for efficient text accumulation
+            if let buffer = streamingBuffers[message.responseId] {
+                // The message.content already contains the full accumulated text from StreamingCoordinator
+                // We'll use the buffer to track what's new for differential updates
+                let previousLength = buffer.currentSize
+                buffer.reset() // Clear and refill with new content
+                buffer.append(message.content)
+                
+                // For logging purposes, we can track the delta
+                let deltaLength = message.content.count - previousLength
+                if deltaLength > 0 {
+                    print("📈 ChatManager: Added \(deltaLength) new characters to message")
+                }
+            }
 
             let responseMessage = OAChatMessage(
                 id: message.responseId,
@@ -404,6 +426,9 @@ final class OAChatManager {
 
         case .messageCompleted(let message):
             print("🟢 ChatManager: Completing message with ID: \(message.responseId) for chat: \(chatId)")
+            
+            // Clean up ring buffer for this message
+            streamingBuffers.removeValue(forKey: message.responseId)
 
             let responseMessage = OAChatMessage(
                 id: message.responseId,
@@ -465,6 +490,8 @@ final class OAChatManager {
             // The tool call results will be included in the final message content
 
         case .streamError(let error):
+            // Clean up any streaming buffers on error
+            streamingBuffers.removeAll()
             handleStreamingError(error, chatId: chatId)
 
         case .imageGenerationInProgress(let itemId):
