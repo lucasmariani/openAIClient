@@ -14,7 +14,7 @@ final class AttachmentSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "attachments")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .attachments(let attachments) = segment else {
             return UIView()
         }
@@ -22,7 +22,7 @@ final class AttachmentSegmentRenderer: BaseContentSegmentRenderer {
         return createAttachmentStackView(for: attachments)
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         // Attachments don't support in-place updates
         return false
     }
@@ -141,7 +141,7 @@ final class GeneratedImageSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "generatedImages")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .generatedImages(let imageDatas) = segment else {
             return UIView()
         }
@@ -149,7 +149,7 @@ final class GeneratedImageSegmentRenderer: BaseContentSegmentRenderer {
         return createGeneratedImagesView(from: imageDatas)
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         // Generated images don't support in-place updates
         return false
     }

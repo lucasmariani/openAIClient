@@ -27,10 +27,10 @@ protocol ContentSegmentRenderer {
     var segmentType: String { get }
     
     /// Create a new view for the segment
-    func createView(for segment: ContentSegment) -> UIView
+    func createView(for segment: ContentSegment, role: OARole) -> UIView
     
     /// Update an existing view with new segment data
-    func updateView(_ view: UIView, with segment: ContentSegment) -> Bool
+    func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool
     
     /// Check if this renderer can handle the given segment
     func canRender(_ segment: ContentSegment) -> Bool
@@ -45,11 +45,11 @@ class BaseContentSegmentRenderer: ContentSegmentRenderer {
         self.segmentType = segmentType
     }
     
-    func createView(for segment: ContentSegment) -> UIView {
+    func createView(for segment: ContentSegment, role: OARole) -> UIView {
         fatalError("Subclasses must implement createView")
     }
     
-    func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         // Default implementation recreates the view
         return false
     }

@@ -16,23 +16,23 @@ final class TextSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "text")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .text(let text) = segment else {
             return UIView()
         }
         
         let textView = createTextView()
-        updateTextViewContent(textView, with: text, isStreaming: false)
+        updateTextViewContent(textView, with: text, role: role, isStreaming: false)
         return textView
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         guard let textView = view as? UITextView,
               case .text(let text) = segment else {
             return false
         }
         
-        updateTextViewContent(textView, with: text, isStreaming: false)
+        updateTextViewContent(textView, with: text, role: role, isStreaming: false)
         return true
     }
     
@@ -47,10 +47,7 @@ final class TextSegmentRenderer: BaseContentSegmentRenderer {
         return textView
     }
     
-    private func updateTextViewContent(_ textView: UITextView, with text: String, isStreaming: Bool) {
-        // Get role from the text view's tag (will be set by parent)
-        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
-        
+    private func updateTextViewContent(_ textView: UITextView, with text: String, role: OARole, isStreaming: Bool) {
         let attributedString = attributedStringCache.attributedString(from: text, role: role)
         
         // Only update if content actually changed
@@ -69,17 +66,17 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "streamingText")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .streamingText(let text) = segment else {
             return UIView()
         }
         
         let textView = createTextView()
-        updateTextViewContent(textView, with: text, messageId: UUID().uuidString)
+        updateTextViewContent(textView, with: text, role: role, messageId: UUID().uuidString)
         return textView
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         guard let textView = view as? UITextView,
               case .streamingText(let text) = segment else {
             return false
@@ -89,7 +86,7 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
         let messageId = textView.accessibilityIdentifier ?? UUID().uuidString
         
         // Use differential update for streaming
-        updateStreamingTextView(textView, with: text, messageId: messageId)
+        updateStreamingTextView(textView, with: text, role: role, messageId: messageId)
         return true
     }
     
@@ -104,12 +101,9 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
         return textView
     }
     
-    private func updateTextViewContent(_ textView: UITextView, with text: String, messageId: String) {
+    private func updateTextViewContent(_ textView: UITextView, with text: String, role: OARole, messageId: String) {
         // Store message ID for future updates
         textView.accessibilityIdentifier = messageId
-        
-        // Get role from the text view's tag
-        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
         
         let attributedString = attributedStringCache.attributedStringForStreaming(
             from: text,
@@ -120,8 +114,7 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
         textView.attributedText = attributedString
     }
     
-    private func updateStreamingTextView(_ textView: UITextView, with text: String, messageId: String) {
-        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
+    private func updateStreamingTextView(_ textView: UITextView, with text: String, role: OARole, messageId: String) {
         let newAttributedString = attributedStringCache.attributedStringForStreaming(
             from: text,
             role: role,

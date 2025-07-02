@@ -28,22 +28,19 @@ final class CompositeMessageRenderer: MessageContentRenderer {
             return
         }
         
-        // Clear existing content
-        clearContent(in: container)
-        
         // Create views for each segment
         var segmentViews: [UIView] = []
         
         for segment in content.segments {
             if let renderer = registry.renderer(for: segment) {
-                let view = renderer.createView(for: segment)
+                let view = renderer.createView(for: segment, role: content.role)
                 segmentViews.append(view)
             } else {
                 print("Warning: No renderer found for segment type: \(segment.typeIdentifier)")
             }
         }
         
-        // Set content views in bubble
+        // Use differential update instead of clearing content to prevent flashing
         bubbleView.setContentViews(segmentViews)
         
         // Cache the views for potential updates
@@ -78,7 +75,7 @@ final class CompositeMessageRenderer: MessageContentRenderer {
                lastIndex < cachedViews.count {
                 
                 let lastView = cachedViews[lastIndex]
-                if renderer.updateView(lastView, with: lastSegment) {
+                if renderer.updateView(lastView, with: lastSegment, role: content.role) {
                     return true
                 }
             }
@@ -94,11 +91,11 @@ final class CompositeMessageRenderer: MessageContentRenderer {
                     let oldView = cachedViews[index]
                     
                     // Try to update in place
-                    if renderer.updateView(oldView, with: segment) {
+                    if renderer.updateView(oldView, with: segment, role: content.role) {
                         return true
                     } else {
                         // Replace with new view
-                        let newView = renderer.createView(for: segment)
+                        let newView = renderer.createView(for: segment, role: content.role)
                         bubbleView.updateSegmentView(at: index, with: newView)
                         
                         // Update cache
@@ -124,7 +121,8 @@ final class CompositeMessageRenderer: MessageContentRenderer {
             return
         }
         
-        bubbleView.clearContent()
+        // Only clear cache - let setContentViews handle view updates to prevent flashing
+        // bubbleView.clearContent() is now avoided to prevent UI flashing
         
         // Clear cache for this container
         // Note: We might want to keep some cache for reuse

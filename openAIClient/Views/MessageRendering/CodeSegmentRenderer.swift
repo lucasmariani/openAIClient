@@ -14,7 +14,7 @@ final class CodeSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "code")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .code(let code, let language) = segment else {
             return UIView()
         }
@@ -22,7 +22,7 @@ final class CodeSegmentRenderer: BaseContentSegmentRenderer {
         return OACodeBlockView(code: code, language: language)
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         guard let _ = view as? OACodeBlockView,
               case .code(_, _) = segment else {
             return false
@@ -41,7 +41,7 @@ final class PartialCodeSegmentRenderer: BaseContentSegmentRenderer {
         super.init(segmentType: "partialCode")
     }
     
-    override func createView(for segment: ContentSegment) -> UIView {
+    override func createView(for segment: ContentSegment, role: OARole) -> UIView {
         guard case .partialCode(let code, let language) = segment else {
             return UIView()
         }
@@ -49,7 +49,7 @@ final class PartialCodeSegmentRenderer: BaseContentSegmentRenderer {
         return OAPartialCodeBlockView(partialCode: code, possibleLanguage: language)
     }
     
-    override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
+    override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
         guard let partialCodeView = view as? OAPartialCodeBlockView,
               case .partialCode(let code, let language) = segment else {
             return false
