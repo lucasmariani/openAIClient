@@ -171,20 +171,3 @@ extension OAChatMessageCell {
         configure(with: chatMessage)
     }
 }
-
-// MARK: - Performance Monitoring
-#if DEBUG
-extension OAChatMessageCell {
-    private func measurePerformance<T>(operation: String, block: () throws -> T) rethrows -> T {
-        let startTime = CFAbsoluteTimeGetCurrent()
-        let result = try block()
-        let timeElapsed = CFAbsoluteTimeGetCurrent() - startTime
-        
-        if timeElapsed > 0.016 { // More than 16ms (60fps threshold)
-            print("⚠️ Performance: \(operation) took \(String(format: "%.2f", timeElapsed * 1000))ms")
-        }
-        
-        return result
-    }
-}
-#endif
