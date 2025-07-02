@@ -35,6 +35,7 @@ class OAChatMessageCell: UITableViewCell {
         
         // Configure main message stack view (positions the bubble)
         messageStackView.axis = .vertical
+        messageStackView.backgroundColor = .clear
         messageStackView.translatesAutoresizingMaskIntoConstraints = false
         messageStackView.addArrangedSubview(bubbleView)
         

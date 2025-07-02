@@ -96,24 +96,52 @@ final class DifferentialMarkdownParser {
             state.pendingContent = ""
         }
         
-        // For simplicity during streaming, just parse the whole content each time
-        // This is still more efficient than full markdown parsing
-        state.tokens = []
-        state.pendingContent = ""
-        state.lastProcessedIndex = content.startIndex
+        // Only process new content that was added since last parse
+        let oldContent = String(content.prefix(upTo: state.lastProcessedIndex))
+        let newContent = String(content.suffix(from: state.lastProcessedIndex))
         
-        // Process content line by line
-        let lines = content.components(separatedBy: .newlines)
+        // If no new content, return existing tokens
+        guard !newContent.isEmpty else {
+            return state.tokens
+        }
         
-        for (index, line) in lines.enumerated() {
-            let isLastLine = index == lines.count - 1
+        // Process only new content line by line
+        let newLines = newContent.components(separatedBy: .newlines)
+        
+        // If we have pending content from last parse, we need to update the last token
+        if !state.pendingContent.isEmpty && !newLines.isEmpty {
+            // Remove the last incomplete token and replace with complete version
+            if case .plainText(_) = state.tokens.last {
+                state.tokens.removeLast()
+            }
             
-            if isLastLine && !line.isEmpty && !content.hasSuffix("\n") {
-                // Last line without newline - might be incomplete during streaming
-                processLine(line, state: &state, isComplete: false)
-                state.pendingContent = line
-            } else {
-                processLine(line, state: &state, isComplete: true)
+            // Process the now-complete line
+            let completeLine = state.pendingContent + newLines[0]
+            processLine(completeLine, state: &state, isComplete: true)
+            state.pendingContent = ""
+            
+            // Process remaining new lines (skip first since we just handled it)
+            for (index, line) in newLines.dropFirst().enumerated() {
+                let isLastLine = index == newLines.count - 2 // -2 because we dropped first
+                
+                if isLastLine && !line.isEmpty && !content.hasSuffix("\n") {
+                    processLine(line, state: &state, isComplete: false)
+                    state.pendingContent = line
+                } else {
+                    processLine(line, state: &state, isComplete: true)
+                }
+            }
+        } else {
+            // No pending content, process new lines normally
+            for (index, line) in newLines.enumerated() {
+                let isLastLine = index == newLines.count - 1
+                
+                if isLastLine && !line.isEmpty && !content.hasSuffix("\n") {
+                    processLine(line, state: &state, isComplete: false)
+                    state.pendingContent = line
+                } else {
+                    processLine(line, state: &state, isComplete: true)
+                }
             }
         }
         
@@ -122,8 +150,6 @@ final class DifferentialMarkdownParser {
         
         // Save state for next differential parse
         parsingStates[messageId] = state
-        
-        print("DifferentialMarkdownParser: Parsed \(state.tokens.count) tokens for message \(messageId)")
         
         return state.tokens
     }

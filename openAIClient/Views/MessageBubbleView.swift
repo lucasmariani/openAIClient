@@ -37,6 +37,7 @@ final class MessageBubbleView: UIView {
         // Configure content stack view
         contentStackView.axis = .vertical
         contentStackView.spacing = 8
+        contentStackView.backgroundColor = .clear
         contentStackView.translatesAutoresizingMaskIntoConstraints = false
         
         addSubview(contentStackView)
