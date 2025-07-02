@@ -8,6 +8,7 @@
 import UIKit
 
 /// Protocol for rendering message content
+@MainActor
 protocol MessageContentRenderer {
     /// Render the complete message content
     func render(_ content: MessageContent, in container: UIView)
@@ -20,6 +21,7 @@ protocol MessageContentRenderer {
 }
 
 /// Protocol for rendering individual content segments
+@MainActor
 protocol ContentSegmentRenderer {
     /// The type of content segment this renderer handles
     var segmentType: String { get }
@@ -35,6 +37,7 @@ protocol ContentSegmentRenderer {
 }
 
 /// Base implementation with common functionality
+@MainActor
 class BaseContentSegmentRenderer: ContentSegmentRenderer {
     let segmentType: String
     
@@ -98,7 +101,11 @@ class SegmentRendererRegistry {
     }
     
     private func registerDefaultRenderers() {
-        // Default renderers will be registered here
-        // This will be populated when we implement specific renderers
+        register(TextSegmentRenderer())
+        register(StreamingTextSegmentRenderer())
+        register(CodeSegmentRenderer())
+        register(PartialCodeSegmentRenderer())
+        register(AttachmentSegmentRenderer())
+        register(GeneratedImageSegmentRenderer())
     }
 }

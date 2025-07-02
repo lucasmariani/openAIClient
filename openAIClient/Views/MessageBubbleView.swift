@@ -64,7 +64,7 @@ final class MessageBubbleView: UIView {
         layer.cornerRadius = 16
         
         // Update role tag for child views
-        tag = appearance.textColor == .white ? OARole.user.rawValue : OARole.assistant.rawValue
+        tag = appearance.textColor == .white ? OARole.user.hashValue : OARole.assistant.hashValue
         
         // Propagate tag to all text views for proper coloring
         updateTextViewTags(in: contentStackView, tag: tag)

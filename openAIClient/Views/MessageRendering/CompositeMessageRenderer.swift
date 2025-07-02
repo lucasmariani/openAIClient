@@ -83,7 +83,8 @@ final class CompositeMessageRenderer: MessageContentRenderer {
                 }
             }
             // Fall through to full update if incremental update failed
-            fallthrough
+            render(content, in: container)
+            return true
             
         case .segmentUpdate(let index):
             // Update specific segment

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 /// Represents a segment of content within a message
 enum ContentSegment: Equatable {

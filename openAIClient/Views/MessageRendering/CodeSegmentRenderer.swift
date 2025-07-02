@@ -8,6 +8,7 @@
 import UIKit
 
 /// Renderer for code block segments
+@MainActor
 final class CodeSegmentRenderer: BaseContentSegmentRenderer {
     init() {
         super.init(segmentType: "code")
@@ -22,8 +23,8 @@ final class CodeSegmentRenderer: BaseContentSegmentRenderer {
     }
     
     override func updateView(_ view: UIView, with segment: ContentSegment) -> Bool {
-        guard let codeView = view as? OACodeBlockView,
-              case .code(let code, let language) = segment else {
+        guard let _ = view as? OACodeBlockView,
+              case .code(_, _) = segment else {
             return false
         }
         
@@ -34,6 +35,7 @@ final class CodeSegmentRenderer: BaseContentSegmentRenderer {
 }
 
 /// Renderer for partial code blocks during streaming
+@MainActor
 final class PartialCodeSegmentRenderer: BaseContentSegmentRenderer {
     init() {
         super.init(segmentType: "partialCode")

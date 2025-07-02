@@ -8,6 +8,7 @@
 import UIKit
 
 /// Renderer for text content segments
+@MainActor
 final class TextSegmentRenderer: BaseContentSegmentRenderer {
     private let attributedStringCache = AttributedStringCache.shared
     
@@ -48,7 +49,7 @@ final class TextSegmentRenderer: BaseContentSegmentRenderer {
     
     private func updateTextViewContent(_ textView: UITextView, with text: String, isStreaming: Bool) {
         // Get role from the text view's tag (will be set by parent)
-        let role = OARole(rawValue: textView.tag) ?? .assistant
+        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
         
         let attributedString = attributedStringCache.attributedString(from: text, role: role)
         
@@ -60,6 +61,7 @@ final class TextSegmentRenderer: BaseContentSegmentRenderer {
 }
 
 /// Renderer for streaming text content segments
+@MainActor
 final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
     private let attributedStringCache = AttributedStringCache.shared
     
@@ -107,7 +109,7 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
         textView.accessibilityIdentifier = messageId
         
         // Get role from the text view's tag
-        let role = OARole(rawValue: textView.tag) ?? .assistant
+        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
         
         let attributedString = attributedStringCache.attributedStringForStreaming(
             from: text,
@@ -119,7 +121,7 @@ final class StreamingTextSegmentRenderer: BaseContentSegmentRenderer {
     }
     
     private func updateStreamingTextView(_ textView: UITextView, with text: String, messageId: String) {
-        let role = OARole(rawValue: textView.tag) ?? .assistant
+        let role: OARole = textView.tag == OARole.user.hashValue ? .user : .assistant
         let newAttributedString = attributedStringCache.attributedStringForStreaming(
             from: text,
             role: role,

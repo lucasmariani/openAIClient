@@ -8,6 +8,7 @@
 import UIKit
 
 /// Renderer for attachment segments
+@MainActor
 final class AttachmentSegmentRenderer: BaseContentSegmentRenderer {
     init() {
         super.init(segmentType: "attachments")
@@ -134,6 +135,7 @@ final class AttachmentSegmentRenderer: BaseContentSegmentRenderer {
 }
 
 /// Renderer for generated image segments
+@MainActor
 final class GeneratedImageSegmentRenderer: BaseContentSegmentRenderer {
     init() {
         super.init(segmentType: "generatedImages")
