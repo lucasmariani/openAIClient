@@ -36,6 +36,8 @@ enum ContentSegment: Equatable {
             return newText.hasPrefix(oldText)
         case (.streamingText(let oldText), .streamingText(let newText)):
             return newText.hasPrefix(oldText)
+        case (.code(let oldCode, let oldLang), .code(let newCode, let newLang)):
+            return oldLang == newLang && newCode.hasPrefix(oldCode)
         case (.partialCode(let oldCode, let oldLang), .partialCode(let newCode, let newLang)):
             return oldLang == newLang && newCode.hasPrefix(oldCode)
         default:

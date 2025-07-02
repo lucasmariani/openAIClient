@@ -23,14 +23,13 @@ final class CodeSegmentRenderer: BaseContentSegmentRenderer {
     }
     
     override func updateView(_ view: UIView, with segment: ContentSegment, role: OARole) -> Bool {
-        guard let _ = view as? OACodeBlockView,
-              case .code(_, _) = segment else {
+        guard let codeBlockView = view as? OACodeBlockView,
+              case .code(let code, let language) = segment else {
             return false
         }
         
-        // OACodeBlockView doesn't support in-place updates currently
-        // Would need to be refactored to support this
-        return false
+        // Use the new in-place update capability
+        return codeBlockView.updateContent(code: code, language: language)
     }
 }
 
