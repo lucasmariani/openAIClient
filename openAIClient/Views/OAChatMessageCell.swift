@@ -121,33 +121,30 @@ class OAChatMessageCell: UITableViewCell {
             break
 
         case .appendToLastText:
-//            print("DEBUG detected append-only text change - updating in place")
             if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
                case .text(let newText) = newContentSegments.last {
-                updateTextView(lastView, with: newText, role: message.role)
+                updateTextView(lastView, with: newText, role: message.role, isStreaming: isStreaming, messageId: message.id)
             } else {
                 // Fallback to full recreation if we can't find the text view
-                performFullContentUpdate(for: message)
+                performFullContentUpdate(for: message, isStreaming: isStreaming)
             }
             
         case .appendToLastStreamingText:
-//            print("DEBUG detected append-only streaming text change - updating in place")
             if let lastView = bubbleStackView.arrangedSubviews.last as? UITextView,
                case .streamingText(let newText) = newContentSegments.last {
-                updateTextView(lastView, with: newText, role: message.role)
+                updateTextView(lastView, with: newText, role: message.role, isStreaming: true, messageId: message.id)
             } else if let lastView = bubbleStackView.arrangedSubviews.last as? OAPartialCodeBlockView,
                       case .partialCode(let newCode, let newLang) = newContentSegments.last {
                 // Update partial code block in place
                 lastView.updateContent(partialCode: newCode, possibleLanguage: newLang)
             } else {
                 // Fallback to full recreation if we can't find the appropriate view
-                performFullContentUpdate(for: message)
+                performFullContentUpdate(for: message, isStreaming: isStreaming)
             }
             
         case .fullRecreation:
-//            print("DEBUG performing full content recreation")
             currentContentSegments = newContentSegments
-            performFullContentUpdate(for: message)
+            performFullContentUpdate(for: message, isStreaming: isStreaming)
         }
         
         // Update stored segments and hash
@@ -158,9 +155,14 @@ class OAChatMessageCell: UITableViewCell {
         configureBubbleAlignment(for: message.role)
     }
     
-    private func updateTextView(_ textView: UITextView, with text: String, role: OARole) {
-        // Use cached attributed string for better performance
-        let newAttributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
+    private func updateTextView(_ textView: UITextView, with text: String, role: OARole, isStreaming: Bool = false, messageId: String? = nil) {
+        // Use differential parsing for streaming content
+        let newAttributedString: NSAttributedString
+        if isStreaming, let messageId = messageId {
+            newAttributedString = AttributedStringCache.shared.attributedStringForStreaming(from: text, role: role, messageId: messageId)
+        } else {
+            newAttributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
+        }
         
         // Use textStorage for efficient updates when possible
         let textStorage = textView.textStorage
@@ -193,7 +195,7 @@ class OAChatMessageCell: UITableViewCell {
         textView.attributedText = newAttributedString
     }
     
-    private func performFullContentUpdate(for message: OAChatMessage) {
+    private func performFullContentUpdate(for message: OAChatMessage, isStreaming: Bool = false) {
 //        print("DEBUG removing all arrangedSubviews for full update")
         // Remove previous content
         bubbleStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -205,8 +207,12 @@ class OAChatMessageCell: UITableViewCell {
                 let attachmentView = createAttachmentView(for: attachments)
                 bubbleStackView.addArrangedSubview(attachmentView)
                 
-            case .text(let text), .streamingText(let text):
-                let textView = createFormattedTextView(from: text, role: message.role)
+            case .text(let text):
+                let textView = createFormattedTextView(from: text, role: message.role, isStreaming: false, messageId: message.id)
+                bubbleStackView.addArrangedSubview(textView)
+                
+            case .streamingText(let text):
+                let textView = createFormattedTextView(from: text, role: message.role, isStreaming: true, messageId: message.id)
                 bubbleStackView.addArrangedSubview(textView)
                 
             case .code(let code, let language):
@@ -532,7 +538,7 @@ class OAChatMessageCell: UITableViewCell {
         return views
     }
     
-    private func createFormattedTextView(from text: String, role: OARole) -> UITextView {
+    private func createFormattedTextView(from text: String, role: OARole, isStreaming: Bool = false, messageId: String? = nil) -> UITextView {
         let textView = UITextView()
         textView.isEditable = false
         textView.isScrollEnabled = false
@@ -540,8 +546,13 @@ class OAChatMessageCell: UITableViewCell {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         
-        // Use cached attributed string for better performance
-        let attributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
+        // Use appropriate parsing based on streaming state
+        let attributedString: NSAttributedString
+        if isStreaming, let messageId = messageId {
+            attributedString = AttributedStringCache.shared.attributedStringForStreaming(from: text, role: role, messageId: messageId)
+        } else {
+            attributedString = AttributedStringCache.shared.attributedString(from: text, role: role)
+        }
         textView.attributedText = attributedString
         
         return textView

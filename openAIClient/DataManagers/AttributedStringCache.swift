@@ -2,7 +2,7 @@
 //  AttributedStringCache.swift
 //  openAIClient
 //
-//  Created by Assistant on 2025-07-01.
+//  Created by Lucas on 01.07.25.
 //
 
 import UIKit
@@ -23,6 +23,9 @@ final class AttributedStringCache {
     private var cache: [CacheKey: CacheEntry] = [:]
     private let maxCacheSize: Int = 200
     private let cacheExpirationInterval: TimeInterval = 300 // 5 minutes
+    
+    // Differential parser for streaming optimization
+    private let differentialParser = DifferentialMarkdownParser()
     
     static let shared = AttributedStringCache()
     
@@ -114,6 +117,25 @@ final class AttributedStringCache {
         cache(attributedString, for: text, role: role)
         
         return attributedString
+    }
+    
+    /// Create attributed string using differential parsing for streaming content
+    func attributedStringForStreaming(from text: String, role: OARole, messageId: String) -> NSAttributedString {
+        // Use differential parser for streaming content
+        let tokens = differentialParser.parseDifferentially(content: text, for: messageId)
+        let attributedString = differentialParser.attributedString(from: tokens, role: role)
+
+        // Cache the result
+        let key = CacheKey(text: text, role: role)
+        let entry = CacheEntry(attributedString: attributedString, timestamp: Date())
+        cache[key] = entry
+        
+        return attributedString
+    }
+    
+    /// Clear differential parsing state when streaming completes
+    func clearStreamingState(for messageId: String) {
+        differentialParser.clearState(for: messageId)
     }
     
     /// Clear all cached strings

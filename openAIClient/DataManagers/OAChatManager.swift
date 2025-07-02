@@ -429,6 +429,9 @@ final class OAChatManager {
             
             // Clean up ring buffer for this message
             streamingBuffers.removeValue(forKey: message.responseId)
+            
+            // Clear differential parsing state
+            AttributedStringCache.shared.clearStreamingState(for: message.responseId)
 
             let responseMessage = OAChatMessage(
                 id: message.responseId,
@@ -492,6 +495,12 @@ final class OAChatManager {
         case .streamError(let error):
             // Clean up any streaming buffers on error
             streamingBuffers.removeAll()
+            
+            // Clear all differential parsing states on error
+            for (messageId, _) in streamingBuffers {
+                AttributedStringCache.shared.clearStreamingState(for: messageId)
+            }
+            
             handleStreamingError(error, chatId: chatId)
 
         case .imageGenerationInProgress(let itemId):
@@ -503,8 +512,8 @@ final class OAChatManager {
         case .imageGenerationPartialImage(let itemId, let imageData):
             print("🎨 ChatManager: Partial image received for item: \(itemId), size: \(imageData.count) bytes")
 
-        case .imageGenerationCompleted(let itemId, let results):
-            print("🎨 ChatManager: Image generation completed for item: \(itemId), \(results.count) images generated")
+        case .imageGenerationCompleted(let itemId):
+            print("🎨 ChatManager: Image generation completed for item: \(itemId)")
 
             //        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
             //            break
