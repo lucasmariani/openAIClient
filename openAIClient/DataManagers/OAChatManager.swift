@@ -515,16 +515,6 @@ final class OAChatManager {
         case .imageGenerationCompleted(let itemId):
             print("🎨 ChatManager: Image generation completed for item: \(itemId)")
 
-            //        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
-            //            break
-            //        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
-            //            break
-            //        case .functionCallArgumentsDone(callId: let callId, arguments: let arguments):
-            //            break
-            //        case .reasoningDelta(delta: let delta):
-            //            break
-            //        case .reasoningDone(reasoning: let reasoning):
-            //            break
         default: break
         }
     }
