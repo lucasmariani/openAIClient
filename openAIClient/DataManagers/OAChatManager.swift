@@ -503,19 +503,9 @@ final class OAChatManager {
         case .imageGenerationPartialImage(let itemId, let imageData):
             print("🎨 ChatManager: Partial image received for item: \(itemId), size: \(imageData.count) bytes")
 
-        case .imageGenerationCompleted(let itemId, let results):
-            print("🎨 ChatManager: Image generation completed for item: \(itemId), \(results.count) images generated")
+        case .imageGenerationCompleted(let itemId):
+            print("🎨 ChatManager: Image generation completed for item: \(itemId)")
 
-            //        case .annotationAdded(_, itemId: let itemId, contentIndex: let contentIndex):
-            //            break
-            //        case .functionCallArgumentsDelta(callId: let callId, delta: let delta):
-            //            break
-            //        case .functionCallArgumentsDone(callId: let callId, arguments: let arguments):
-            //            break
-            //        case .reasoningDelta(delta: let delta):
-            //            break
-            //        case .reasoningDone(reasoning: let reasoning):
-            //            break
         default: break
         }
     }
